@@ -1,0 +1,124 @@
+.section-navigation {
+  display: flex;
+  gap: 6px;
+  padding: 0 0 15px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  min-width: 0;
+}
+.section-navigation button,
+.resource-subnavigation button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 10px 15px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+.section-navigation button:hover,
+.resource-subnavigation button:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+.section-navigation button[aria-current='page'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 650;
+}
+.resource-subnavigation {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin: -8px 0 22px;
+  min-width: 0;
+}
+.resource-subnavigation button {
+  font-size: 15px;
+  padding: 8px 13px;
+  border: 1px solid transparent;
+}
+.resource-subnavigation button[aria-current='page'] {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+}
+.navigation-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  flex-wrap: wrap;
+  padding: 15px 18px;
+  margin-bottom: 22px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+.navigation-context p {
+  margin: 0;
+  flex: 1;
+  min-width: 180px;
+}
+.extension-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.extension-resource-card {
+  padding: 25px;
+}
+.extension-resource-card h2 {
+  font-size: 20px;
+  margin: 12px 0;
+}
+.extension-resource-card p {
+  color: var(--text-secondary);
+  line-height: 1.8;
+  margin: 14px 0;
+  font-size: 16px;
+}
+.sidebar .section-hint {
+  padding: 3px 13px 20px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.resource-project-action {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.project-scope-note {
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+  margin: 0 0 25px;
+}
+.project-scope-note button {
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 800px) {
+  .sidebar .section-hint {
+    display: none;
+  }
+  .section-navigation {
+    gap: 2px;
+    margin-bottom: 20px;
+  }
+  .section-navigation button {
+    padding: 10px 12px;
+    font-size: 15px;
+  }
+  .extension-resource-grid {
+    grid-template-columns: 1fr;
+  }
+}

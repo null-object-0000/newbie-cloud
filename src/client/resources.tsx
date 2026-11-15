@@ -297,6 +297,8 @@ function SourceIssues({
 }
 
 export function ResourceExplorer({
+  managedProjects = [],
+  onOpenProject,
   accounts,
   zones,
   snapshots,
@@ -308,6 +310,8 @@ export function ResourceExplorer({
   domainFilter,
   setDomainFilter,
 }: Common & {
+  managedProjects?: { id: string; account_id: string; remote_name: string }[];
+  onOpenProject?: (id: string) => void;
   category: Exclude<Category, 'registrations'>;
   onSync: () => void;
   domainFilter: string;
@@ -439,6 +443,12 @@ export function ResourceExplorer({
                 const a = accounts.find((a) => a.id === r.accountId),
                   z = zones.find((z) => z.id === r.zoneId),
                   state = z ? dnsState(z, accounts, observations) : null;
+                const managed =
+                  category === 'services' && a?.provider === 'cloudflare' && r.kind === 'Pages'
+                    ? managedProjects.find(
+                        (p) => p.account_id === r.accountId && p.remote_name === r.id,
+                      )
+                    : undefined;
                 return (
                   <tr key={r.key}>
                     <td className="record-name">
@@ -498,6 +508,15 @@ export function ResourceExplorer({
                       )}
                     </td>
                     <td>
+                      {managed && onOpenProject && (
+                        <button
+                          className="secondary compact"
+                          onClick={() => onOpenProject(managed.id)}
+                        >
+                          管理项目
+                          <ArrowRight size={14} />
+                        </button>
+                      )}
                       {z ? (
                         <button className="secondary compact" onClick={() => onOpenZone(z.id)}>
                           域名配置

@@ -81,11 +81,19 @@ function Dialog({
   );
 }
 export function Projects({
+  initialProjectId = '',
+  onProjectChange,
+  onProjectsChange,
+  onResources,
   api,
   accounts,
   onConnect,
   onAccounts,
 }: {
+  initialProjectId?: string;
+  onProjectChange?: (id: string) => void;
+  onProjectsChange?: (items: Project[]) => void;
+  onResources?: () => void;
   api: Api;
   accounts: Account[];
   onConnect: () => void;
@@ -113,10 +121,15 @@ export function Projects({
   const attempts = useRef(0),
     activeId = useRef<string | null>(null);
   const available = accounts.filter((a) => a.provider === 'cloudflare' && !a.readonly);
-  const load = async () => setProjects((await api('/projects')).items);
+  const load = async () => {
+    const items = (await api('/projects')).items;
+    setProjects(items);
+    onProjectsChange?.(items);
+  };
   async function open(projectId: string) {
     activeId.current = projectId;
     setDetail(await api('/projects/' + projectId));
+    onProjectChange?.(projectId);
     setSelected([]);
     setError('');
     setNotice('');
@@ -138,7 +151,10 @@ export function Projects({
     }
   }
   useEffect(() => {
-    void run(load);
+    void run(async () => {
+      await load();
+      if (initialProjectId) await open(initialProjectId);
+    });
     return () => {
       activeId.current = null;
     };
@@ -240,15 +256,60 @@ export function Projects({
       )}
       {!detail ? (
         <>
-          <section className="panel project-hero">
-            <div>
-              <span className="eyebrow">从一个网页开始</span>
-              <h2>做好的网页，现在就上线。</h2>
-              <p>
-                连接一个 Cloudflare 账号，上传 HTML 或构建目录，获得带 HTTPS
-                的免费托管地址。更新与回滚都在同一个项目里完成。
-              </p>
-              <div className="project-actions">
+          <p className="project-scope-note">
+            这里管理通过 Newbie Cloud 创建的网站，当前支持 Cloudflare Pages。
+            {onResources && (
+              <>
+                已有的云端网站、Workers 和 EdgeOne 服务，可到
+                <button onClick={onResources}>资源 → 站点与函数</button>查看。
+              </>
+            )}
+          </p>
+          {!projects.length && (
+            <section className="panel project-hero">
+              <div>
+                <span className="eyebrow">从一个网页开始</span>
+                <h2>做好的网页，现在就上线。</h2>
+                <p>
+                  连接一个 Cloudflare 账号，上传 HTML 或构建目录，获得带 HTTPS
+                  的免费托管地址。更新与回滚都在同一个项目里完成。
+                </p>
+                <div className="project-actions">
+                  <button
+                    className="primary"
+                    disabled={busy}
+                    onClick={() => {
+                      setCreating(true);
+                      setAccountId(available[0]?.id ?? '');
+                    }}
+                  >
+                    <Plus size={18} />
+                    {projects.length ? '新建网页项目' : '发布我的第一个网页'}
+                  </button>
+                  <a
+                    className="secondary"
+                    href="https://developers.cloudflare.com/pages/platform/limits/"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    查看免费额度
+                    <ExternalLink size={15} />
+                  </a>
+                </div>
+              </div>
+              <div className="project-steps">
+                <span>01　连接一个账号</span>
+                <span>02　选择静态文件</span>
+                <span>03　发布并验证链接</span>
+              </div>
+            </section>
+          )}
+          {!!projects.length && (
+            <div className="inventory-toolbar">
+              <h2>
+                网站列表 <small>（{projects.length}）</small>
+              </h2>
+              <div className="project-actions" style={{ marginTop: 0 }}>
                 <button
                   className="primary"
                   disabled={busy}
@@ -257,44 +318,17 @@ export function Projects({
                     setAccountId(available[0]?.id ?? '');
                   }}
                 >
-                  <Plus size={18} />
-                  {projects.length ? '新建网页项目' : '发布我的第一个网页'}
+                  <Plus size={17} />
+                  新建网站项目
                 </button>
-                <a
-                  className="secondary"
-                  href="https://developers.cloudflare.com/pages/platform/limits/"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  查看免费额度
-                  <ExternalLink size={15} />
-                </a>
+                <button className="secondary" disabled={busy} onClick={() => void run(load)}>
+                  <RefreshCw size={16} />
+                  刷新项目
+                </button>
               </div>
             </div>
-            <div className="project-steps">
-              <span>01　连接一个账号</span>
-              <span>02　选择静态文件</span>
-              <span>03　发布并验证链接</span>
-            </div>
-          </section>
-          <div className="inventory-toolbar">
-            <h2>
-              我的项目 <small>（{projects.length}）</small>
-            </h2>
-            <button className="secondary" disabled={busy} onClick={() => void run(load)}>
-              <RefreshCw size={16} />
-              刷新项目
-            </button>
-          </div>
-          {!projects.length ? (
-            <section className="panel project-empty">
-              <Folder size={36} />
-              <h3>你的第一个项目，从这里开始</h3>
-              <p>
-                个人主页、博客、文档、AI 生成的演示页，都可以。没有现成文件，也可以先发布内置示例。
-              </p>
-            </section>
-          ) : (
+          )}
+          {!!projects.length && (
             <div className="project-grid">
               {projects.map((p) => (
                 <button
@@ -324,6 +358,7 @@ export function Projects({
               className="secondary"
               onClick={() => {
                 activeId.current = null;
+                onProjectChange?.('');
                 setNotice('');
                 setError('');
                 setDetail(null);

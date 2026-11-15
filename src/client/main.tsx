@@ -27,6 +27,7 @@ import {
   LoaderCircle,
   Package,
   Folder as FolderIcon,
+  Layers3,
 } from 'lucide-react';
 import type { Account, Zone, DnsRecord, RecordInput, Provider, Operation, Plan } from '../shared';
 import './style.css';
@@ -37,6 +38,15 @@ import { DomainExplorer, ResourceExplorer, syncResources, type Category } from '
 import { CloudServers, Containers } from './servers';
 import { PluginCenter, PluginResources } from './plugins';
 import { Projects } from './projects';
+import {
+  sectionFor,
+  sectionLabels,
+  resourceGroups,
+  resourceGroup,
+  type View,
+  type Section,
+} from './navigation';
+import './navigation.css';
 import { viewPlugins } from '../plugins/catalog';
 import type { PluginStatus } from '../plugins/types';
 import { domainInventory, dnsState, resourceRows } from '../inventory';
@@ -168,38 +178,34 @@ function Modal({
   );
 }
 type Snapshot = ResourceSnapshot;
-type View =
-  | 'projects'
-  | 'overview'
-  | 'accounts'
-  | 'dns'
-  | 'records'
-  | 'services'
-  | 'email'
-  | 'certificates'
-  | 'deploy'
-  | 'servers'
-  | 'containers'
-  | 'plugins'
-  | 'plugin-resource'
-  | 'history'
-  | 'settings';
 const navigation: [View, string, typeof Cloud][] = [
   ['projects', '我的项目', FolderIcon],
-  ['overview', '总览', LayoutDashboard],
+  ['overview', '资源总览', LayoutDashboard],
   ['accounts', '云账号', Cloud],
-  ['dns', '域名与 DNS', Globe2],
+  ['dns', '域名总览', Globe2],
   ['records', 'DNS 记录', Search],
-  ['services', '托管服务', Server],
+  ['services', '站点与函数', Server],
   ['email', '邮箱转发', Mail],
   ['certificates', 'HTTPS 证书', ShieldCheck],
-  ['deploy', '部署', CloudUpload],
+  ['deploy', '已有工作流', CloudUpload],
   ['servers', '服务器', Server],
   ['containers', '本机容器', Server],
   ['history', '操作记录', History],
   ['plugins', '插件中心', Package],
+  ['extensions', '扩展资源', Package],
+  ['settings', '使用说明', Settings],
 ];
 function App() {
+  const [sectionViews, setSectionViews] = useState<Record<Section, View>>({
+    projects: 'projects',
+    resources: 'overview',
+    activity: 'history',
+    settings: 'accounts',
+  });
+  const [managedProjects, setManagedProjects] = useState<
+      { id: string; account_id: string; remote_name: string }[]
+    >([]),
+    [focusedProject, setFocusedProject] = useState('');
   const [activePlugins, setActivePlugins] = useState<string[] | null>(null),
     [pluginStatuses, setPluginStatuses] = useState<PluginStatus[]>([]),
     [resourcePlugin, setResourcePlugin] = useState('');
@@ -236,7 +242,7 @@ function App() {
   const selectedZone = zones.find((z) => z.id === zoneId),
     selectedAccount = accounts.find((a) => a.id === selectedZone?.accountId);
   async function refresh() {
-    const [a, z, o, s, dns, me, plugins] = await Promise.all([
+    const [a, z, o, s, dns, me, plugins, projectList] = await Promise.all([
       api('/accounts'),
       api('/zones'),
       api('/operations'),
@@ -244,6 +250,7 @@ function App() {
       api('/dns-observations'),
       api('/me'),
       api('/plugins'),
+      api('/projects'),
     ]);
     setAccounts(a.items);
     setZones(z.items);
@@ -254,6 +261,7 @@ function App() {
     setPluginStatuses(plugins.items);
     setGithubEnabled(me.features.githubDeploy);
     setLocalCapabilities(me.features.local ?? null);
+    setManagedProjects(projectList.items ?? []);
   }
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -328,11 +336,29 @@ function App() {
       return;
     }
     setView(v);
+    setSectionViews((previous) => ({ ...previous, [sectionFor(v)]: v }));
     setDnsDetail(false);
     setResourceDomain('');
     setQuery('');
     setError('');
     setNotice('');
+  };
+  const section = sectionFor(view),
+    currentGroup = resourceGroup(view);
+  const enabledView = (v: View) =>
+    (v !== 'plugin-resource' ||
+      pluginStatuses.some((p) => p.manifest.id === resourcePlugin && p.enabled && p.available)) &&
+    (v !== 'containers' || !!localCapabilities) &&
+    (!viewPlugins[v] || !activePlugins || activePlugins.includes(viewPlugins[v]));
+  const chooseSection = (s: Section) => {
+    let target = sectionViews[s];
+    if (!enabledView(target))
+      target = s === 'resources' ? 'overview' : s === 'projects' ? 'projects' : 'accounts';
+    nav(target);
+  };
+  const openManagedProject = (id: string) => {
+    setFocusedProject(id);
+    nav('projects');
   };
   const certificates = resourceRows(snapshots, 'certificates');
   const domains = domainInventory(zones, snapshots);
@@ -484,49 +510,38 @@ function App() {
       <aside className="sidebar">
         <Brand />
         <span className="workspace-label">PERSONAL WORKSPACE</span>
-        <nav>
-          {navigation
-            .filter(
-              ([id]) =>
-                (id !== 'containers' || !!localCapabilities) &&
-                (!viewPlugins[id] || !activePlugins || activePlugins.includes(viewPlugins[id])),
-            )
-            .map(([id, label, Icon]) => (
-              <button key={id} className={view === id ? 'active' : ''} onClick={() => nav(id)}>
-                <Icon size={18} />
-                {label}
-                {id === 'accounts' && accounts.length > 0 && (
-                  <span className="nav-count">{accounts.length}</span>
-                )}
-              </button>
-            ))}
-          {pluginStatuses
-            .filter((p) => !p.builtin && p.enabled && p.available)
-            .map((p) => (
-              <button
-                key={p.manifest.id}
-                className={
-                  view === 'plugin-resource' && resourcePlugin === p.manifest.id ? 'active' : ''
-                }
-                onClick={() => {
-                  setResourcePlugin(p.manifest.id);
-                  setView('plugin-resource');
-                }}
-              >
-                <Package size={18} />
-                {p.manifest.name}
-              </button>
-            ))}
+        <nav aria-label="主导航">
+          {(
+            [
+              ['projects', FolderIcon],
+              ['resources', Layers3],
+              ['activity', History],
+              ['settings', Settings],
+            ] as [Section, typeof Cloud][]
+          ).map(([id, Icon]) => (
+            <button
+              key={id}
+              aria-label={sectionLabels[id]}
+              aria-current={section === id ? 'page' : undefined}
+              title={sectionLabels[id]}
+              className={section === id ? 'active' : ''}
+              onClick={() => chooseSection(id)}
+            >
+              <Icon size={19} />
+              {sectionLabels[id]}
+            </button>
+          ))}
         </nav>
+        <p className="section-hint">
+          发布与维护项目，
+          <br />
+          按需查看底层资源。
+        </p>
         <div className="sidebar-bottom">
           <div className="free-note">
             <span className="green-dot" />
             免费额度优先<small>无需常驻服务器</small>
           </div>
-          <button onClick={() => nav('settings')} className={view === 'settings' ? 'active' : ''}>
-            <Settings size={17} />
-            使用说明
-          </button>
           <button
             onClick={() =>
               void run(async () => {
@@ -546,7 +561,7 @@ function App() {
       <div className="main-shell">
         <header className="topbar">
           <div>
-            <span className="breadcrumb">我的工作台</span>
+            <span className="breadcrumb">{sectionLabels[section]}</span>
             <ChevronRight size={14} />
             <strong>
               {view === 'plugin-resource'
@@ -578,12 +593,62 @@ function App() {
               </button>
             </div>
           )}
+          {section !== 'activity' && (
+            <nav className="section-navigation" aria-label="分区导航">
+              {(section === 'resources'
+                ? resourceGroups
+                    .filter((g) => g.views.some(enabledView))
+                    .map((g) => ({
+                      id: g.id,
+                      label: g.label,
+                      selected: currentGroup?.id === g.id,
+                      target: g.views.find(enabledView)!,
+                    }))
+                : section === 'projects'
+                  ? (['projects', 'deploy'] as View[]).filter(enabledView).map((v) => ({
+                      id: v,
+                      label: v === 'projects' ? '网站项目' : '已有工作流',
+                      selected: view === v,
+                      target: v,
+                    }))
+                  : section === 'settings'
+                    ? (['accounts', 'plugins', 'settings'] as View[]).map((v) => ({
+                        id: v,
+                        label: navigation.find((n) => n[0] === v)![1],
+                        selected: view === v,
+                        target: v,
+                      }))
+                    : []
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  aria-current={tab.selected ? 'page' : undefined}
+                  onClick={() => nav(tab.target)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          )}
+          {section === 'resources' && ['domains', 'compute'].includes(currentGroup?.id ?? '') && (
+            <nav className="resource-subnavigation" aria-label="资源分类">
+              {currentGroup!.views.filter(enabledView).map((v) => (
+                <button
+                  key={v}
+                  aria-current={view === v ? 'page' : undefined}
+                  onClick={() => nav(v)}
+                >
+                  {navigation.find((n) => n[0] === v)![1]}
+                </button>
+              ))}
+            </nav>
+          )}
           <div className="page-heading">
             <div>
-              <div className="eyebrow">NEWBIE CLOUD / {view.toUpperCase()}</div>
+              <div className="eyebrow">NEWBIE CLOUD / {sectionLabels[section]}</div>
               <h1>
                 {view === 'overview'
-                  ? '你的云，一目了然。'
+                  ? '资源总览'
                   : view === 'plugin-resource'
                     ? pluginStatuses.find((p) => p.manifest.id === resourcePlugin)?.manifest.name
                     : (navigation.find((n) => n[0] === view)?.[1] ?? '使用说明')}
@@ -591,18 +656,19 @@ function App() {
               <p>
                 {
                   {
-                    projects: '让做好的网页上线。一个账号，免费发布，持续更新。',
-                    overview: '域名、解析和托管服务，在一个地方看清。',
+                    projects: '管理在这里创建的网站：发布、更新、验证与回滚。',
+                    overview: '汇总所有已连接账号的资产，保留注册商、DNS 和托管平台各自的来源。',
                     accounts: '连接自己的云账号，按实际权限管理资源。',
                     dns: '按域名统一查看注册、DNS 和关联资源；同名域名自动归并。',
                     records: '全部账号的 DNS 记录，保留每条记录的来源和生效情况。',
                     services: '查看各个平台上的站点与边缘托管服务。',
                     email: '查看 Cloudflare 的邮箱转发规则，现有配置保持不变。',
                     certificates: '记录平台证书状态，及时发现即将到期的证书。',
-                    deploy: '将构建和发布交给已有的 GitHub Actions 工作流。',
+                    deploy: '运行已配置好的 GitHub Actions；执行结果在 GitHub 查看。',
                     servers: '汇总阿里云 ECS、腾讯云 CVM；自托管版还可查看部署主机。',
                     containers: '查看本机 Docker 容器、日志和资源用量，按需确认启停操作。',
-                    plugins: '按需组合内置能力，从 GitHub / npm 安装第三方资源插件。',
+                    plugins: '配置工作台能力与第三方插件。插件返回的资源统一在资源区查看。',
+                    extensions: '查看已安装插件提供的资源；插件安装与启停在设置中管理。',
                     'plugin-resource': '通过已启用的扩展查看资源。',
                     history: '每一次连接、检查和变更，都有迹可循。',
                     settings: '轻量、单用户、免费额度优先。',
@@ -612,11 +678,15 @@ function App() {
             </div>
             <div className="heading-actions">
               {busy && <LoaderCircle size={19} className="spin" />}
-              <button className="secondary" disabled={busy} onClick={() => void run(refresh)}>
-                <RefreshCw size={16} />
-                刷新
-              </button>
-              {['overview', 'accounts'].includes(view) && (
+              {!['projects', 'extensions', 'plugin-resource', 'plugins', 'settings'].includes(
+                view,
+              ) && (
+                <button className="secondary" disabled={busy} onClick={() => void run(refresh)}>
+                  <RefreshCw size={16} />
+                  刷新
+                </button>
+              )}
+              {view === 'accounts' && (
                 <button className="primary" onClick={() => setAccountModal(null)}>
                   <Plus size={17} />
                   添加云账号
@@ -628,6 +698,10 @@ function App() {
             <Projects
               api={api}
               accounts={accounts}
+              initialProjectId={focusedProject}
+              onProjectChange={setFocusedProject}
+              onProjectsChange={setManagedProjects}
+              onResources={() => nav('services')}
               onConnect={() => setAccountModal(null)}
               onAccounts={() => nav('accounts')}
             />
@@ -636,7 +710,7 @@ function App() {
             <>
               <section className="stats">
                 {[
-                  [Cloud, '已连接账号', accounts.length, '三家云，各自独立'],
+                  [Cloud, '已连接账号', accounts.length, '统一查看，独立授权'],
                   [Globe2, '已同步域名', domains.length, `${zones.length} 份 DNS 配置，按域名去重`],
                   [ShieldCheck, '已检查证书', certificates.length, '来自平台查询结果'],
                   [
@@ -1003,6 +1077,8 @@ function App() {
               snapshots={snapshots}
               observations={observations}
               busy={busy}
+              managedProjects={managedProjects}
+              onOpenProject={openManagedProject}
               onOpenZone={openZone}
               category={view as 'services' | 'certificates' | 'email' | 'records'}
               onSync={() => void run(() => syncAllResources(view as Category))}
@@ -1017,9 +1093,66 @@ function App() {
               onAccounts={() => nav('accounts')}
               onResources={(id) => {
                 setResourcePlugin(id);
-                setView('plugin-resource');
+                nav('plugin-resource');
               }}
             />
+          )}
+          {view === 'extensions' && (
+            <>
+              <div className="navigation-context">
+                <p>第三方插件提供的资源集中在这里。安装、配置与启停在设置中完成。</p>
+                <button className="secondary" onClick={() => nav('plugins')}>
+                  管理插件
+                </button>
+              </div>
+              {!pluginStatuses.some((p) => !p.builtin) ? (
+                <Empty
+                  title="还没有扩展资源"
+                  description="安装资源插件后，就能在这里查看它提供的资产。"
+                  action={
+                    <button className="secondary" onClick={() => nav('plugins')}>
+                      前往插件中心
+                    </button>
+                  }
+                />
+              ) : (
+                <div className="extension-resource-grid">
+                  {pluginStatuses
+                    .filter((p) => !p.builtin)
+                    .map((p) => (
+                      <section className="panel extension-resource-card" key={p.manifest.id}>
+                        <Package size={23} />
+                        <h2>{p.manifest.name}</h2>
+                        <p>{p.manifest.description}</p>
+                        <p>
+                          {p.reason ?? (p.enabled ? '插件已启用' : '插件已停用，请到设置中启用。')}
+                        </p>
+                        <button
+                          className="secondary"
+                          disabled={!p.enabled || !p.available}
+                          onClick={() => {
+                            setResourcePlugin(p.manifest.id);
+                            nav('plugin-resource');
+                          }}
+                        >
+                          查看资源
+                        </button>
+                      </section>
+                    ))}
+                </div>
+              )}
+            </>
+          )}
+          {view === 'plugin-resource' && (
+            <div className="navigation-context">
+              <p>当前查看插件提供的资源。</p>
+              <button className="secondary" onClick={() => nav('extensions')}>
+                返回扩展资源
+              </button>
+              <button className="secondary" onClick={() => nav('plugins')}>
+                插件设置
+              </button>
+            </div>
           )}
           {view === 'plugin-resource' &&
             pluginStatuses.find((p) => p.manifest.id === resourcePlugin) && (
@@ -1046,8 +1179,11 @@ function App() {
               <div className="section-icon">
                 <CloudUpload size={28} />
               </div>
-              <h2>派发一次部署</h2>
-              <p>调用你已有的 GitHub Actions，构建产物由工作流直接发布到目标云平台。</p>
+              <h2>运行已有 GitHub 工作流</h2>
+              <p>
+                适用于已经配置 workflow_dispatch
+                的仓库。这里仅提交运行请求，不创建网站项目，也不提供该工作流的部署状态或回滚。
+              </p>
               {!githubEnabled && (
                 <div className="callout">
                   此实例尚未配置 GITHUB_TOKEN。添加仅限目标仓库、具有 Actions 写权限的 token
@@ -1094,7 +1230,7 @@ function App() {
                 </div>
                 <button className="primary" disabled={!githubEnabled || busy}>
                   <CloudUpload size={16} />
-                  提交部署请求
+                  运行工作流
                 </button>
               </form>
               <small>
@@ -1141,11 +1277,12 @@ function App() {
                   的读取、创建、修改与删除，写入前必须确认差异。邮箱转发、托管服务与证书目前为查询和监控。
                 </p>
                 <p>
-                  域名列表是 DNS 托管区域，不等同于注册商的全部域名资产。资源列表显示 API
-                  首批结果；DNS 记录支持逐页查看。
+                  项目区管理通过本平台创建的网站及其发布历史；资源区汇总全部云账号的现有资产。域名按注册商、DNS
+                  和关联服务归并，保留来源与同步状态，不会按名称猜测项目归属。
                 </p>
                 <p>
-                  不自动开通付费产品、不自动迁移站点，不生成或保存证书私钥。证书申请、自动部署与复杂迁移流程将逐步接入。
+                  静态项目支持 Cloudflare Pages 发布、更新、验证与回滚。已有 GitHub
+                  工作流入口只派发请求，不代表部署完成。不会自动购买产品、迁移现有站点或生成证书私钥。
                 </p>
                 <a
                   className="text-button"
