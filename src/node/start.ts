@@ -13,6 +13,7 @@ const runtime = createNodeRuntime({
   githubToken: process.env.GITHUB_TOKEN,
   socket: process.env.DOCKER_SOCKET || undefined,
   writeEnabled: process.env.DOCKER_WRITE_ENABLED === 'true',
+  codePlugins: process.env.ALLOW_CODE_PLUGINS === 'true',
   containerized: process.env.CONTAINER === 'true' || fs.existsSync('/.dockerenv'),
 });
 let checking = false;

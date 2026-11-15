@@ -1,0 +1,35 @@
+import type { PluginManifest, BuiltinPluginId } from './types';
+export const builtinPlugins: PluginManifest[] = [
+  ['cloudflare', 'Cloudflare', 'DNS、Pages / Workers、注册域名、邮箱和边缘证书'],
+  ['tencent', '腾讯云', 'DNSPod、EdgeOne Makers 与 CVM'],
+  ['aliyun', '阿里云', '注册域名、云解析、ESA、证书与 ECS'],
+  ['domains', '域名总览', '按域名合并注册、DNS 与资源，并核实公共 NS'],
+  ['dns', 'DNS 管理', '记录查询、变更预览、保护确认和写入'],
+  ['services', '托管服务', '统一展示各平台的站点和边缘服务'],
+  ['email', '邮箱转发', '读取 Cloudflare Email Routing'],
+  ['certificates', '证书巡检', '查询证书并按定时任务检查'],
+  ['servers', '云服务器', '汇总 ECS / CVM 的全部账号与地域'],
+  ['docker', '本机容器', 'Docker 清单、日志、用量和确认后启停'],
+  ['host', '部署主机', '自托管环境和数据卷、Docker Engine 概览'],
+  ['github-deploy', 'GitHub 部署', '派发现有 GitHub Actions 工作流'],
+].map(([id, name, description]) => ({
+  schemaVersion: 1,
+  id,
+  name,
+  description,
+  version: '1.0.0',
+  kind: 'builtin',
+  permissions: { network: [] },
+  config: [],
+}));
+export const builtinIds = new Set(builtinPlugins.map((p) => p.id));
+export const viewPlugins: Record<string, BuiltinPluginId> = {
+  dns: 'domains',
+  records: 'dns',
+  services: 'services',
+  email: 'email',
+  certificates: 'certificates',
+  servers: 'servers',
+  containers: 'docker',
+  deploy: 'github-deploy',
+};

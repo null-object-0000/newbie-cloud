@@ -27,6 +27,10 @@ export interface Env {
   ENCRYPTION_KEY: string;
   GITHUB_TOKEN?: string;
   LOCAL?: LocalRuntime;
+  PLUGINS?: {
+    codeEnabled: boolean;
+    collect(code: string, config: Record<string, string>, hosts: string[]): Promise<unknown>;
+  };
 }
 export interface AccountRow {
   id: string;

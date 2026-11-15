@@ -105,6 +105,39 @@ try {
     "process.stdout.write(require('node:fs').readFileSync('/data/admin-token.txt','utf8').trim())",
   ]);
   assert.equal((await fetch(origin + '/api/local/containers')).status, 401);
+  assert.ok((await api('/plugins')).body.items.some((p) => p.manifest.id === 'docker'));
+  // Exercise the bundled runner inside the actual non-root, read-only image.
+  docker([
+    'exec',
+    app,
+    'node',
+    '-e',
+    "const fs=require('node:fs');fs.mkdirSync('/data/plugin-smoke',{recursive:true});fs.writeFileSync('/data/plugin-smoke/plugin.mjs',`export default {collect({config}){setInterval(()=>{},1000);return [{id:'image',name:config.name,type:'demo',detail:String(process.env.DOCKER_SOCKET)}]}}`)",
+  ]);
+  const codeResult = execFileSync(
+    'docker',
+    [
+      'exec',
+      '-i',
+      app,
+      'node',
+      '--permission',
+      '--allow-fs-read=/data/plugin-smoke',
+      '/app/server/plugin-runner.mjs',
+    ],
+    {
+      encoding: 'utf8',
+      input: JSON.stringify({
+        filename: '/data/plugin-smoke/plugin.mjs',
+        config: { name: 'Image plugin' },
+        hosts: [],
+      }),
+      timeout: 10000,
+    },
+  );
+  const collected = JSON.parse(codeResult);
+  assert.equal(collected.ok, true);
+  assert.equal(collected.items[0].name, 'Image plugin');
   const system = await api('/local/system');
   assert.equal(system.status, 200);
   assert.ok(system.body.engine.version);
@@ -193,6 +226,7 @@ try {
       startStopRestart: true,
       selfProtection: true,
       authentication: true,
+      bundledPluginRunner: true,
     }),
   );
 } finally {

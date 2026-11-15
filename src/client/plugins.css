@@ -1,0 +1,135 @@
+.plugin-install-panel {
+  padding: 25px;
+  margin-bottom: 25px;
+}
+.plugin-install-panel > div {
+  display: grid;
+  grid-template-columns: 45px 1fr;
+  column-gap: 15px;
+}
+.plugin-install-panel .service-icon {
+  grid-row: span 2;
+}
+.plugin-install-panel h2 {
+  font-size: 19px;
+}
+.plugin-install-panel p {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  line-height: 1.8;
+}
+.plugin-install-panel form {
+  display: flex;
+  align-items: end;
+  gap: 13px;
+  margin-top: 23px;
+}
+.plugin-install-panel label {
+  flex: 1;
+  min-width: 0;
+}
+.plugin-install-panel small {
+  display: block;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.8;
+}
+.plugin-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.plugin-card {
+  padding: 23px;
+}
+.plugin-card-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.plugin-card-title > div {
+  flex: 1;
+  min-width: 0;
+}
+.plugin-card-title h2 {
+  font-size: 17px;
+}
+.plugin-card small {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.plugin-card > p {
+  color: var(--text-secondary);
+  margin: 18px 0;
+  font-size: 14px;
+  line-height: 1.9;
+}
+.plugin-card .plugin-reason,
+.plugin-reason {
+  color: var(--warning);
+  font-size: 14px;
+  line-height: 1.9;
+}
+.plugin-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+.plugin-card-actions > .pill {
+  margin-right: auto;
+}
+.plugin-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--accent);
+}
+.plugin-preview {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 13px;
+  margin: 10px 0;
+  font-size: 14px;
+}
+.plugin-preview dt {
+  color: var(--text-muted);
+}
+.plugin-preview dd {
+  margin: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.plugin-config {
+  display: grid;
+  gap: 18px;
+}
+@media (max-width: 1000px) {
+  .plugin-cards {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .plugin-install-panel {
+    padding: 20px;
+  }
+  .plugin-install-panel form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .plugin-preview {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .plugin-preview dd {
+    margin-bottom: 9px;
+  }
+  .plugin-card {
+    padding: 19px;
+  }
+}

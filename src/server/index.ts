@@ -5,6 +5,7 @@ import { authenticated, decrypt, encrypt, matches, sameOrigin, session, sha256 }
 import { Cloud, validateCredentials } from './providers';
 import { canonical, protectedRecord, recordInput } from './validation';
 import { HttpError, now, type AccountRow, type Env, type Fetch, type ZoneRow } from './types';
+import { requirePlugin, enabledBuiltins, routePlugin, pluginApi } from '../plugins/runtime';
 
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), {
@@ -79,6 +80,7 @@ async function zone(env: Env, id: string) {
   return row;
 }
 async function cloud(env: Env, row: AccountRow, fetcher: Fetch) {
+  await requirePlugin(env, row.provider);
   return new Cloud(
     row.provider,
     await decrypt<Credentials>(row.credentials, env.ENCRYPTION_KEY, accountContext(row)),
@@ -151,10 +153,17 @@ export function createApp(fetcher: Fetch = fetch) {
     }
     if (!(await authenticated(request, env.ADMIN_TOKEN))) throw new HttpError(401, '请先登录');
     if (!['GET', 'HEAD'].includes(method)) sameOrigin(request);
+    if (p.startsWith('/api/plugins')) return pluginApi(request, env, fetcher, body);
+    const feature = routePlugin(p);
+    if (feature) await requirePlugin(env, feature);
     if (p === '/api/me')
       return json({
         authenticated: true,
-        features: { githubDeploy: !!env.GITHUB_TOKEN, local: env.LOCAL?.capabilities ?? null },
+        features: {
+          githubDeploy: !!env.GITHUB_TOKEN,
+          local: env.LOCAL?.capabilities ?? null,
+          plugins: await enabledBuiltins(env),
+        },
       });
     if (p.startsWith('/api/local/')) {
       if (!env.LOCAL) throw new HttpError(404, '本机管理仅在 Docker / Node 自托管版提供');
@@ -327,6 +336,7 @@ export function createApp(fetcher: Fetch = fetch) {
         credentials = validateCredentials(provider, input.credentials),
         id = crypto.randomUUID(),
         at = now();
+      await requirePlugin(env, provider);
       const encrypted = await encrypt(credentials, env.ENCRYPTION_KEY, id + ':' + provider);
       await env.DB.prepare('INSERT INTO accounts VALUES(?,?,?,?,?,?,?)')
         .bind(id, name, provider, input.readonly !== false ? 1 : 0, encrypted, at, at)
@@ -638,9 +648,12 @@ export function createApp(fetcher: Fetch = fetch) {
       return new Response(response.body, { status: response.status, headers });
     },
     async scheduled(_event: ScheduledEvent, env: Env) {
+      const active = new Set(await enabledBuiltins(env));
+      if (!active.has('certificates')) return;
       // One read-only cloud request group per tick. Never deploy or mutate DNS in cron.
-      const rows = (await env.DB.prepare('SELECT * FROM accounts ORDER BY id').all<AccountRow>())
-        .results;
+      const rows = (
+        await env.DB.prepare('SELECT * FROM accounts ORDER BY id').all<AccountRow>()
+      ).results.filter((row) => active.has(row.provider));
       if (!rows.length) return;
       const offset = Number(
           (

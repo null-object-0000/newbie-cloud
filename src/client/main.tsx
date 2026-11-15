@@ -25,6 +25,7 @@ import {
   CloudUpload,
   ExternalLink,
   LoaderCircle,
+  Package,
 } from 'lucide-react';
 import type { Account, Zone, DnsRecord, RecordInput, Provider, Operation, Plan } from '../shared';
 import './style.css';
@@ -33,6 +34,9 @@ import { AppearancePicker } from './appearance';
 import { PwaInstall, PwaProvider } from './pwa';
 import { DomainExplorer, ResourceExplorer, syncResources, type Category } from './resources';
 import { CloudServers, Containers } from './servers';
+import { PluginCenter, PluginResources } from './plugins';
+import { viewPlugins } from '../plugins/catalog';
+import type { PluginStatus } from '../plugins/types';
 import { domainInventory, dnsState, resourceRows } from '../inventory';
 import type { DnsObservation, ResourceSnapshot, LocalCapabilities } from '../shared';
 
@@ -173,6 +177,8 @@ type View =
   | 'deploy'
   | 'servers'
   | 'containers'
+  | 'plugins'
+  | 'plugin-resource'
   | 'history'
   | 'settings';
 const navigation: [View, string, typeof Cloud][] = [
@@ -187,8 +193,12 @@ const navigation: [View, string, typeof Cloud][] = [
   ['servers', '服务器', Server],
   ['containers', '本机容器', Server],
   ['history', '操作记录', History],
+  ['plugins', '插件中心', Package],
 ];
 function App() {
+  const [activePlugins, setActivePlugins] = useState<string[] | null>(null),
+    [pluginStatuses, setPluginStatuses] = useState<PluginStatus[]>([]),
+    [resourcePlugin, setResourcePlugin] = useState('');
   const [localCapabilities, setLocalCapabilities] = useState<LocalCapabilities | null>(null);
   const [auth, setAuth] = useState<boolean | null>(null),
     [configured, setConfigured] = useState(true),
@@ -222,18 +232,24 @@ function App() {
   const selectedZone = zones.find((z) => z.id === zoneId),
     selectedAccount = accounts.find((a) => a.id === selectedZone?.accountId);
   async function refresh() {
-    const [a, z, o, s, dns] = await Promise.all([
+    const [a, z, o, s, dns, me, plugins] = await Promise.all([
       api('/accounts'),
       api('/zones'),
       api('/operations'),
       api('/snapshots'),
       api('/dns-observations'),
+      api('/me'),
+      api('/plugins'),
     ]);
     setAccounts(a.items);
     setZones(z.items);
     setOperations(o.items);
     setSnapshots(s.items);
     setObservations(dns.items);
+    setActivePlugins(me.features.plugins ?? null);
+    setPluginStatuses(plugins.items);
+    setGithubEnabled(me.features.githubDeploy);
+    setLocalCapabilities(me.features.local ?? null);
   }
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -303,6 +319,10 @@ function App() {
     setQuery('');
   };
   const nav = (v: View) => {
+    if (viewPlugins[v] && activePlugins && !activePlugins.includes(viewPlugins[v])) {
+      setNotice('请先在插件中心启用此能力。');
+      return;
+    }
     setView(v);
     setDnsDetail(false);
     setResourceDomain('');
@@ -317,6 +337,10 @@ function App() {
     : 'unverified';
   const dnsBlocked = selectedDnsState === 'other';
   const openZone = (id: string) => {
+    if (activePlugins && !activePlugins.includes('dns')) {
+      setNotice('请先在插件中心启用 DNS 管理。');
+      return;
+    }
     chooseZone(id);
     setView('dns');
     setDnsDetail(true);
@@ -458,7 +482,11 @@ function App() {
         <span className="workspace-label">PERSONAL WORKSPACE</span>
         <nav>
           {navigation
-            .filter(([id]) => id !== 'containers' || !!localCapabilities)
+            .filter(
+              ([id]) =>
+                (id !== 'containers' || !!localCapabilities) &&
+                (!viewPlugins[id] || !activePlugins || activePlugins.includes(viewPlugins[id])),
+            )
             .map(([id, label, Icon]) => (
               <button key={id} className={view === id ? 'active' : ''} onClick={() => nav(id)}>
                 <Icon size={18} />
@@ -466,6 +494,23 @@ function App() {
                 {id === 'accounts' && accounts.length > 0 && (
                   <span className="nav-count">{accounts.length}</span>
                 )}
+              </button>
+            ))}
+          {pluginStatuses
+            .filter((p) => !p.builtin && p.enabled && p.available)
+            .map((p) => (
+              <button
+                key={p.manifest.id}
+                className={
+                  view === 'plugin-resource' && resourcePlugin === p.manifest.id ? 'active' : ''
+                }
+                onClick={() => {
+                  setResourcePlugin(p.manifest.id);
+                  setView('plugin-resource');
+                }}
+              >
+                <Package size={18} />
+                {p.manifest.name}
               </button>
             ))}
         </nav>
@@ -499,7 +544,11 @@ function App() {
           <div>
             <span className="breadcrumb">我的工作台</span>
             <ChevronRight size={14} />
-            <strong>{navigation.find((n) => n[0] === view)?.[1] ?? '使用说明'}</strong>
+            <strong>
+              {view === 'plugin-resource'
+                ? pluginStatuses.find((p) => p.manifest.id === resourcePlugin)?.manifest.name
+                : (navigation.find((n) => n[0] === view)?.[1] ?? '使用说明')}
+            </strong>
           </div>
           <div className="topbar-actions">
             <PwaInstall />
@@ -531,7 +580,9 @@ function App() {
               <h1>
                 {view === 'overview'
                   ? '你的云，一目了然。'
-                  : (navigation.find((n) => n[0] === view)?.[1] ?? '使用说明')}
+                  : view === 'plugin-resource'
+                    ? pluginStatuses.find((p) => p.manifest.id === resourcePlugin)?.manifest.name
+                    : (navigation.find((n) => n[0] === view)?.[1] ?? '使用说明')}
               </h1>
               <p>
                 {
@@ -546,6 +597,8 @@ function App() {
                     deploy: '将构建和发布交给已有的 GitHub Actions 工作流。',
                     servers: '汇总阿里云 ECS、腾讯云 CVM；自托管版还可查看部署主机。',
                     containers: '查看本机 Docker 容器、日志和资源用量，按需确认启停操作。',
+                    plugins: '按需组合内置能力，从 GitHub / npm 安装第三方资源插件。',
+                    'plugin-resource': '通过已启用的扩展查看资源。',
                     history: '每一次连接、检查和变更，都有迹可循。',
                     settings: '轻量、单用户、免费额度优先。',
                   }[view]
@@ -944,13 +997,32 @@ function App() {
               setDomainFilter={setResourceDomain}
             />
           )}
+          {view === 'plugins' && (
+            <PluginCenter
+              api={api}
+              onChanged={refresh}
+              onAccounts={() => nav('accounts')}
+              onResources={(id) => {
+                setResourcePlugin(id);
+                setView('plugin-resource');
+              }}
+            />
+          )}
+          {view === 'plugin-resource' &&
+            pluginStatuses.find((p) => p.manifest.id === resourcePlugin) && (
+              <PluginResources
+                key={resourcePlugin}
+                plugin={pluginStatuses.find((p) => p.manifest.id === resourcePlugin)!}
+                api={api}
+              />
+            )}
           {view === 'servers' && (
             <CloudServers
               accounts={accounts}
               snapshots={snapshots}
               api={api}
               onRefresh={refresh}
-              local={localCapabilities}
+              local={!activePlugins || activePlugins.includes('host') ? localCapabilities : null}
             />
           )}
           {view === 'containers' && localCapabilities && (

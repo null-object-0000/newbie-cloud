@@ -6,6 +6,7 @@ import { createApp } from '../server/index';
 import type { Env, Fetch, LocalRuntime } from '../server/types';
 import { SqliteDatabase } from './database';
 import { localRuntime } from './docker';
+import { codePluginHost } from './plugin-host';
 
 type Keys = { ADMIN_TOKEN: string; ENCRYPTION_KEY: string };
 export function loadKeys(directory: string, provided: Partial<Keys> = {}) {
@@ -105,6 +106,8 @@ export function createNodeRuntime(options: {
   containerized?: boolean;
   fetcher?: Fetch;
   local?: LocalRuntime;
+  codePlugins?: boolean;
+  pluginRunner?: string;
 }) {
   const data = path.resolve(options.dataDirectory),
     keys = loadKeys(data, options.keys),
@@ -126,6 +129,11 @@ export function createNodeRuntime(options: {
     DB: db.asD1(),
     ASSETS: assetHandler(options.assetsDirectory),
     GITHUB_TOKEN: options.githubToken,
+    PLUGINS: codePluginHost(
+      path.join(data, 'plugins'),
+      options.pluginRunner ?? path.resolve('server/plugin-runner.mjs'),
+      !!options.codePlugins,
+    ),
     LOCAL:
       options.local ??
       localRuntime({

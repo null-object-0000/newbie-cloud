@@ -8,6 +8,7 @@ services:
     environment:
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      ALLOW_CODE_PLUGINS: ${ALLOW_CODE_PLUGINS:-false}
     volumes:
       - newbie-data:/data
     read_only: true

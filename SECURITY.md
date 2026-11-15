@@ -15,3 +15,7 @@ Newbie Cloud is a single-user, self-hosted control plane. It stores encrypted cl
 - Node deployment validates Host and uses an explicitly configured PUBLIC_ORIGIN behind HTTPS proxies. It does not trust arbitrary forwarded-origin headers. `/api/` responses remain no-store and are excluded from PWA caching in both deployment modes.
 
 This initial MVP is not an audited security product. Keep tokens scoped to the resources and capabilities you actually use, and run only within your own account.
+
+Third-party plugins use a dedicated resource protocol. Previewing reads manifests and pins sources without executing package scripts. Declarative plugins use declared public HTTPS hosts and independent encrypted configuration; they do not receive existing cloud-account credentials. Resource responses are transient and excluded from PWA caching.
+
+JavaScript plugins require `ALLOW_CODE_PLUGINS=true` on Node/Docker plus explicit installation consent. A fresh child process, minimal environment, filesystem permissions and time/output limits reduce accidents; they are **not a sandbox for malicious code**. Trusted code can still exercise the runtime user's network/system capabilities, including reachable Docker sockets. Never enable this option for untrusted code. See [plugin documentation](docs/plugins.md).

@@ -20,6 +20,8 @@ docker compose cp newbie-cloud:/data/admin-token.txt .local/docker-admin-token.t
 
 ## 本机 Docker
 
+插件中心支持从 GitHub / npm 安装资源插件。声明式插件默认可用；要运行自己信任的 JavaScript 插件，在 `.env` 设置 `ALLOW_CODE_PLUGINS=true` 后重建容器。每次安装仍需在界面确认来源与执行权限。子进程限制不构成恶意代码沙箱，详见[插件文档](plugins.md)。默认关闭此能力。
+
 默认不挂载 Docker socket。需要查看本机 Docker 时，显式使用第二份 Compose 文件：
 
 ```sh

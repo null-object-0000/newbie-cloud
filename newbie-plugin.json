@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "newbie.demo",
+  "name": "Newbie Cloud 示例资源",
+  "version": "0.1.0",
+  "description": "无网络权限、无需密钥的示例插件，用于体验安装与资源视图。",
+  "kind": "declarative",
+  "permissions": { "network": [] },
+  "config": [],
+  "resources": [
+    {
+      "id": "plugin-guide",
+      "name": "插件开发文档",
+      "type": "documentation",
+      "status": "示例数据",
+      "url": "https://github.com/null-object-0000/newbie-cloud/blob/main/docs/plugins.md",
+      "detail": "这是一条静态示例资源，不会查询或修改任何云平台。"
+    }
+  ]
+}
