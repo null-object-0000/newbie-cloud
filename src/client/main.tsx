@@ -37,7 +37,7 @@ import { PwaInstall, PwaProvider } from './pwa';
 import { DomainExplorer, ResourceExplorer, syncResources, type Category } from './resources';
 import { CloudServers, Containers } from './servers';
 import { PluginCenter, PluginResources } from './plugins';
-import { Projects } from './projects';
+import { Projects, type Project } from './projects';
 import {
   sectionFor,
   sectionLabels,
@@ -202,9 +202,7 @@ function App() {
     activity: 'history',
     settings: 'accounts',
   });
-  const [managedProjects, setManagedProjects] = useState<
-      { id: string; account_id: string; remote_name: string }[]
-    >([]),
+  const [managedProjects, setManagedProjects] = useState<Project[]>([]),
     [focusedProject, setFocusedProject] = useState('');
   const [activePlugins, setActivePlugins] = useState<string[] | null>(null),
     [pluginStatuses, setPluginStatuses] = useState<PluginStatus[]>([]),
@@ -656,7 +654,7 @@ function App() {
               <p>
                 {
                   {
-                    projects: '管理在这里创建的网站：发布、更新、验证与回滚。',
+                    projects: '统一查看网站的源码、部署、域名与资源；从这里新建或接管站点。',
                     overview: '汇总所有已连接账号的资产，保留注册商、DNS 和托管平台各自的来源。',
                     accounts: '连接自己的云账号，按实际权限管理资源。',
                     dns: '按域名统一查看注册、DNS 和关联资源；同名域名自动归并。',

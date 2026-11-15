@@ -4,6 +4,14 @@ import { requirePlugin } from '../plugins/runtime';
 import { bytesLimited } from '../plugins/sources';
 import { assetHash, base64Bytes, sha, validateAssets, MAX_FILE, type Asset } from './files';
 import { Pages, PagesRejected } from './cloudflare';
+import {
+  candidates,
+  previewExisting,
+  confirmExisting,
+  linkedDetail,
+  linkedSummary,
+  refreshExisting,
+} from './existing';
 type Project = {
   id: string;
   account_id: string;
@@ -16,6 +24,8 @@ type Project = {
   created_at: string;
   updated_at: string;
   request_key: string;
+  management?: 'direct' | 'existing';
+  provider?: string;
 };
 type Release = {
   id: string;
@@ -258,6 +268,11 @@ async function check(env: Env, p: Project, r: Release, fetcher: Fetch) {
       .run();
 }
 async function detail(env: Env, p: Project) {
+  if (p.management === 'existing') {
+    const linked = await linkedDetail(env, p.id);
+    const primary = linked.links.find((l) => l.category === 'hosting' && l.role === 'production');
+    return { project: p, url: primary?.data.primaryUrl ?? null, releases: [], linked };
+  }
   return {
     project: p,
     url: 'https://' + p.remote_name + '.pages.dev',
@@ -289,13 +304,29 @@ export async function projectsApi(request: Request, env: Env, fetcher: Fetch) {
   if (!['GET', 'HEAD'].includes(method)) sameOrigin(request);
   if (path === '/api/projects' && method === 'GET')
     return json({
-      items: agent
-        ? (await env.DB.prepare('SELECT * FROM projects WHERE id=?').bind(agent.project_id).all())
-            .results
-        : (await env.DB.prepare('SELECT * FROM projects ORDER BY created_at DESC').all()).results,
+      items: await linkedSummary(
+        env,
+        agent
+          ? (await env.DB.prepare('SELECT * FROM projects WHERE id=?').bind(agent.project_id).all())
+              .results
+          : (await env.DB.prepare('SELECT * FROM projects ORDER BY created_at DESC').all()).results,
+      ),
       limits: { files: 200, fileBytes: MAX_FILE, totalBytes: 10485760 },
-      provider: 'cloudflare-pages',
+      defaultPublishProvider: 'cloudflare-pages',
+      existingSiteProviders: ['EdgeOne Makers', 'Pages'],
     });
+  if (path.startsWith('/api/projects/import/')) {
+    if (!admin) throw new HttpError(403, '只有所有者可以接管已有站点');
+    if (path === '/api/projects/import/candidates' && method === 'GET')
+      return json({ items: await candidates(env) });
+    if (path === '/api/projects/import/preview' && method === 'POST')
+      return json(await previewExisting(env, await input(request), fetcher));
+    if (path === '/api/projects/import/confirm' && method === 'POST') {
+      const p = await confirmExisting(env, await input(request), fetcher);
+      return json(await detail(env, p), 201);
+    }
+    throw new HttpError(404, '接管接口不存在');
+  }
   if (path === '/api/projects' && method === 'POST') {
     if (!admin) throw new HttpError(403, '项目令牌不能创建其他项目');
     const b = await input(request),
@@ -340,6 +371,17 @@ export async function projectsApi(request: Request, env: Env, fetcher: Fetch) {
   let p = await project(env, match[1]);
   const action = match[2] ?? '';
   if (!action && method === 'GET') return json(await detail(env, p));
+  if (p.management === 'existing') {
+    if (action === 'refresh' && method === 'POST') {
+      await refreshExisting(env, p.id, fetcher);
+      return json(await detail(env, await project(env, p.id)));
+    }
+    if (!action.startsWith('tokens'))
+      throw new HttpError(
+        409,
+        '已有站点目前仅接管关联与读取状态；继续使用原自动部署流程，不接受文件上传、重建站点、回滚或 DNS 修改',
+      );
+  }
   if (action === 'provision' && method === 'POST') {
     if (!admin) throw new HttpError(403, '首次创建云端站点需由项目所有者操作');
     const cf = await cloud(env, p, fetcher, true);
@@ -401,6 +443,8 @@ export async function projectsApi(request: Request, env: Env, fetcher: Fetch) {
       });
     if (method === 'POST') {
       const b = await input(request);
+      if (p.management === 'existing' && b.allowRollback === true)
+        throw new HttpError(400, '已有站点的项目令牌仅支持读取与刷新状态');
       if (typeof b.name !== 'string' || !b.name.trim() || b.name.length > 80)
         throw new HttpError(400, '请填写令牌名称');
       const days = Number(b.days ?? 30);

@@ -48,6 +48,7 @@ npm run build:agent
 node agent/cli.mjs list
 node agent/cli.mjs publish --project PROJECT_ID --directory ./dist --message "更新首页" --request-key unique-release-001
 node agent/cli.mjs status --project PROJECT_ID
+node agent/cli.mjs refresh --project EXISTING_PROJECT_ID
 node agent/cli.mjs status --project PROJECT_ID --release RELEASE_ID
 node agent/cli.mjs rollback --project PROJECT_ID --target OLD_RELEASE_ID --expected CURRENT_RELEASE_ID --request-key unique-rollback-001
 ```
@@ -76,7 +77,7 @@ node agent/cli.mjs rollback --project PROJECT_ID --target OLD_RELEASE_ID --expec
 }
 ```
 
-工具包括 `list_projects`、`project_status`、`publish_static_folder`、`rollback_project`。MCP 仅允许发布 `NEWBIE_CLOUD_PUBLISH_ROOT` 内的目录，不跟随目录内符号链接。这个目录限制是发布文件的边界，不是运行任意不可信 Agent 的操作系统沙箱。
+工具包括 `list_projects`、`project_status`、`refresh_project`、`publish_static_folder`、`rollback_project`。MCP 仅允许发布 `NEWBIE_CLOUD_PUBLISH_ROOT` 内的目录，不跟随目录内符号链接。这个目录限制是发布文件的边界，不是运行任意不可信 Agent 的操作系统沙箱。
 
 可对 Agent 说：“检查项目 PROJECT_ID，把已构建的 dist 发布上去；先告诉我文件数量和目标地址，确认后提交，再检查实际部署结果。”
 
@@ -96,3 +97,17 @@ node agent/cli.mjs rollback --project PROJECT_ID --target OLD_RELEASE_ID --expec
 | 生成 / 撤销令牌     | `POST /api/projects/:id/tokens` / `DELETE …/tokens/:tokenId`（所有者）                     |
 
 创建、发布清单、回滚要求 requestKey。资产哈希沿用 Wrangler Pages 的 BLAKE3(base64内容 + 扩展名) 截取 32 位十六进制，并额外验证完整 SHA-256；实现见 `src/projects/files.ts`。所有 API 响应不缓存，PWA 不保存项目内容或令牌。
+
+## 接管已有站点
+
+项目页点击「接管已有站点」，选择已同步的 EdgeOne Makers / Cloudflare Pages 资源与其已绑定的正式域名。预览会从云平台核实账号、工作空间、资源 ID 和域名绑定；确认时再次检查，然后只写入本工作台的关联，不触发发布、迁移、改绑、DNS 或邮箱操作。只读云账号也可以接管。
+
+可以关联公开 GitHub 仓库、分支、源码目录、构建目录、工作流和部署脚本。当前自动核实要求工作流引用该脚本，脚本以 `const projectId = '…'` 等显式常量指向所选资源，且工作空间一致；源码固定到已核实的提交。刷新发现目标改变时保留原关联并报告错误，不执行源码，也不自动跟随新资源。没有部署脚本时可先只关联云资源，不伪造源码关系。
+
+项目详情展示正式托管、保留资源、已绑定域名、注册商、DNS 来源、最近最多 50 条云端部署和 GitHub 工作流运行。保留资源的跨站点归属由所有者明确关联，资源存在性仍向平台核实。平台有更多部署时明确显示分页边界；刷新失败保留上次成功结果和时间。云端未返回提交信息时，不推测线上源码 SHA。GitHub 匿名 API 限流时尝试读取官方工作流徽章，并标明其不提供具体运行记录。私有源码接管暂不支持。
+
+注册商、DNS 来源来自现有统一资产清单，域名以最长已知域名边界匹配，保留同域名的不同平台配置副本。NS 观测过期时不会声称其仍是当前 DNS；此处不签发证书或修改任何云配置。
+
+接管项目的令牌仅支持 `status` / `refresh`（MCP：`project_status` / `refresh_project`）；上传、重建、回滚及域名修改接口在服务端拒绝。原 GitHub Actions 仍按原有触发条件发布，不会因接管而改变。历史站点的实际部署操作仍交给原流程。
+
+所有者可调用 `GET /api/projects/import/candidates`、`POST /api/projects/import/preview`、`POST /api/projects/import/confirm`。确认需要 previewId 与 `confirmAssociationOnly: true`；预览 15 分钟有效。关联相同账号、平台、类型与远端 ID 的资源时拒绝重复接管。一个项目可保留多份托管资源，但只有一个正式托管资源。`POST /api/projects/:id/refresh` 只刷新关联观测。

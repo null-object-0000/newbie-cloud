@@ -1,0 +1,142 @@
+.existing-overview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  margin: 22px 0;
+}
+.existing-overview > .panel,
+.existing-domains,
+.existing-history,
+.existing-workflow {
+  padding: 25px;
+}
+.existing-overview h3,
+.existing-domains h3,
+.existing-history h3,
+.existing-workflow h3 {
+  font-size: 20px;
+  margin: 12px 0 20px;
+}
+.existing-overview dl {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 12px;
+  margin: 22px 0;
+  font-size: 15px;
+}
+.existing-overview dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.existing-overview dt {
+  color: var(--text-muted);
+}
+.existing-overview a,
+.existing-domains a,
+.existing-workflow a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.existing-overview small,
+.existing-domains small,
+.existing-history small {
+  font-size: 13px;
+  color: var(--text-muted);
+  display: block;
+  margin-top: 8px;
+}
+.existing-evidence {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.8;
+}
+.existing-hosting article + article {
+  border-top: 1px solid var(--border);
+  margin-top: 20px;
+  padding-top: 22px;
+}
+.existing-hosting .pill {
+  margin-left: 9px;
+}
+.existing-hosting p,
+.existing-domains p,
+.existing-history > p {
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+  margin-top: 12px;
+}
+.existing-domain-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 25px;
+  margin: 22px 0;
+}
+.existing-domain-columns .pill {
+  margin-left: 7px;
+}
+.existing-domains,
+.existing-history,
+.existing-workflow {
+  margin-top: 23px;
+}
+.existing-domains article + article,
+.existing-history article + article {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+  margin-top: 22px;
+}
+.existing-history h4 {
+  margin: 20px 0 12px;
+}
+.existing-history .table-scroll,
+.existing-workflow .table-scroll {
+  margin: 15px 0;
+}
+.existing-history td:first-child {
+  max-width: 260px;
+  overflow-wrap: anywhere;
+}
+.existing-domains article > p > a {
+  margin-right: 12px;
+}
+.existing-source > svg,
+.existing-hosting > svg,
+.existing-domains > svg {
+  color: var(--accent);
+}
+@media (max-width: 1000px) {
+  .existing-overview {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 650px) {
+  .existing-overview > .panel,
+  .existing-domains,
+  .existing-history,
+  .existing-workflow {
+    padding: 20px;
+  }
+  .existing-domain-columns {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .existing-overview dl {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+  .existing-overview dd {
+    margin-bottom: 10px;
+  }
+  .existing-hosting .pill {
+    display: table;
+    margin: 10px 0;
+  }
+}

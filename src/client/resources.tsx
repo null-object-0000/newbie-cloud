@@ -1,3 +1,4 @@
+import type { Project } from './projects';
 import { useEffect, useState } from 'react';
 import { ArrowRight, ExternalLink, Globe2, RefreshCw, Search } from 'lucide-react';
 import type { Account, DnsObservation, ResourceSnapshot, Zone } from '../shared';
@@ -310,7 +311,7 @@ export function ResourceExplorer({
   domainFilter,
   setDomainFilter,
 }: Common & {
-  managedProjects?: { id: string; account_id: string; remote_name: string }[];
+  managedProjects?: Project[];
   onOpenProject?: (id: string) => void;
   category: Exclude<Category, 'registrations'>;
   onSync: () => void;
@@ -444,9 +445,20 @@ export function ResourceExplorer({
                   z = zones.find((z) => z.id === r.zoneId),
                   state = z ? dnsState(z, accounts, observations) : null;
                 const managed =
-                  category === 'services' && a?.provider === 'cloudflare' && r.kind === 'Pages'
+                  category === 'services'
                     ? managedProjects.find(
-                        (p) => p.account_id === r.accountId && p.remote_name === r.id,
+                        (p) =>
+                          p.resourceLinks?.some(
+                            (l) =>
+                              l.accountId === r.accountId &&
+                              l.kind === r.kind &&
+                              l.externalId === r.id,
+                          ) ||
+                          (p.management !== 'existing' &&
+                            a?.provider === 'cloudflare' &&
+                            r.kind === 'Pages' &&
+                            p.account_id === r.accountId &&
+                            p.remote_name === r.id),
                       )
                     : undefined;
                 return (

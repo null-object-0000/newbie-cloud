@@ -22,7 +22,7 @@ export function client(
   return async (endpoint: string, method = 'GET', body?: unknown, raw = false) => {
     if (
       endpoint &&
-      !/^\/[a-f0-9-]{36}(?:\/(?:provision|rollback|releases(?:\/[a-f0-9-]{36}(?:\/(?:publish|check|file\?path=[^#]+))?)?))?$/.test(
+      !/^\/[a-f0-9-]{36}(?:\/(?:provision|refresh|rollback|releases(?:\/[a-f0-9-]{36}(?:\/(?:publish|check|file\?path=[^#]+))?)?))?$/.test(
         endpoint,
       )
     )

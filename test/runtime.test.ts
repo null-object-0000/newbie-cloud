@@ -6,6 +6,87 @@ import { Miniflare, convertV4MiniflareOptions, Response as RuntimeResponse } fro
 import { demoManifest, npmArchive } from './plugin-fixtures';
 import { pagesFixture } from './pages-fixture';
 import { describe } from '../src/projects/files';
+import { existingFixture } from './existing-fixture';
+
+test('native Worker imports and refreshes an existing EdgeOne project without cloud mutations', async () => {
+  const script = buildSync({
+      entryPoints: ['src/server/index.ts'],
+      bundle: true,
+      format: 'esm',
+      platform: 'browser',
+      target: 'es2022',
+      write: false,
+    }).outputFiles[0].text,
+    fixture = existingFixture(),
+    token = 'native-existing-site-admin-token-123456789';
+  const mf = new Miniflare(
+    convertV4MiniflareOptions({
+      modules: true,
+      script,
+      compatibilityDate: '2026-11-15',
+      d1Databases: { DB: 'existing-native' },
+      bindings: { ADMIN_TOKEN: token, ENCRYPTION_KEY: Buffer.alloc(32, 11).toString('base64') },
+      outboundService: async (request) => {
+        const result = await fixture.fetcher(request.url, {
+          method: request.method,
+          headers: new Headers(Object.fromEntries(request.headers)),
+          body: request.method === 'GET' ? undefined : await request.text(),
+        });
+        return new RuntimeResponse(await result.arrayBuffer(), {
+          status: result.status,
+          headers: Object.fromEntries(result.headers),
+        });
+      },
+    }),
+  );
+  try {
+    const db = await mf.getD1Database('DB');
+    for (const name of fs
+      .readdirSync('migrations')
+      .filter((n) => n.endsWith('.sql'))
+      .sort())
+      await db.exec(fs.readFileSync('migrations/' + name, 'utf8').replaceAll('\n', ' '));
+    async function api(route: string, data?: unknown) {
+      const response = await mf.dispatchFetch('https://app.example/api' + route, {
+        method: data === undefined ? 'GET' : 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: data === undefined ? undefined : JSON.stringify(data),
+      });
+      const body: any = await response.json();
+      assert.ok(response.ok, JSON.stringify(body));
+      return body;
+    }
+    const a = await api('/accounts', {
+        name: 'Read-only EdgeOne',
+        provider: 'tencent',
+        readonly: true,
+        credentials: { secretId: 'fixture', secretKey: 'fixture', workspaceId: fixture.zone },
+      }),
+      preview = await api('/projects/import/preview', {
+        name: 'Native existing',
+        primaryDomain: fixture.domain,
+        resources: [
+          {
+            accountId: a.account.id,
+            externalId: fixture.projectId,
+            kind: 'EdgeOne Makers',
+            role: 'production',
+          },
+        ],
+        source: { repository: 'owner/site', commit: 'a'.repeat(40) },
+      }),
+      imported = await api('/projects/import/confirm', {
+        previewId: preview.id,
+        confirmAssociationOnly: true,
+      });
+    assert.equal(imported.project.management, 'existing');
+    const fresh = await api('/projects/' + imported.project.id + '/refresh', {});
+    assert.equal(fresh.linked.observations.length, 2);
+    assert.ok(!JSON.stringify(fresh).includes('must-not-return'));
+  } finally {
+    await mf.dispose();
+  }
+});
 
 test('native Worker creates a static project, uploads assets, verifies production and keeps Agent scope', async () => {
   const source = buildSync({

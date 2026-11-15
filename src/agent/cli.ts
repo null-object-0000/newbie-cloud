@@ -23,7 +23,7 @@ try {
   let result: unknown;
   if (!command || command === 'help') {
     console.log(
-      'Newbie Cloud · Node 24\nlist\ncreate --account ID --name 名称 [--request-key KEY]\nprovision --project ID\npublish --project ID --directory ./dist [--request-key KEY] [--message 说明]\nstatus --project ID [--release ID]\nrollback --project ID --target RELEASE --expected CURRENT --request-key KEY\n通过环境变量 NEWBIE_CLOUD_URL / NEWBIE_CLOUD_TOKEN 认证。MCP 使用项目专用令牌。',
+      'Newbie Cloud · Node 24\nlist\ncreate --account ID --name 名称 [--request-key KEY]\nprovision --project ID\npublish --project ID --directory ./dist [--request-key KEY] [--message 说明]\nstatus --project ID [--release ID]\nrefresh --project ID（刷新已接管站点）\nrollback --project ID --target RELEASE --expected CURRENT --request-key KEY\n通过环境变量 NEWBIE_CLOUD_URL / NEWBIE_CLOUD_TOKEN 认证。MCP 使用项目专用令牌。',
     );
     process.exit(0);
   }
@@ -36,6 +36,8 @@ try {
       accountId: required(values.account, 'account'),
       requestKey: values['request-key'] ?? crypto.randomUUID(),
     });
+  else if (command === 'refresh')
+    result = await api('/' + required(pid, 'project') + '/refresh', 'POST', {});
   else if (command === 'provision')
     result = await api('/' + required(pid, 'project') + '/provision', 'POST', {});
   else if (command === 'publish')

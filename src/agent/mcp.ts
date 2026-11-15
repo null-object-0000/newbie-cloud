@@ -16,6 +16,13 @@ const schema = (properties: Record<string, unknown>, required: string[]) => ({
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
+      name: 'refresh_project',
+      description:
+        '刷新已接管站点的源码、云端部署、域名及资源关联观测。仅执行读取，不会重新部署或修改 DNS。',
+      inputSchema: schema({ projectId: string }, ['projectId']),
+      annotations: { readOnlyHint: true },
+    },
+    {
       name: 'list_projects',
       description: '列出令牌授权的项目。项目令牌不能访问其他项目或云密钥。',
       inputSchema: schema({}, []),
@@ -68,6 +75,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const api = client();
     let result: unknown;
     switch (request.params.name) {
+      case 'refresh_project':
+        result = await api('/' + get('projectId') + '/refresh', 'POST', {});
+        break;
       case 'list_projects':
         result = await api('');
         break;

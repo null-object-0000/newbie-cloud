@@ -80,7 +80,7 @@ test('real stdio MCP publishes a bounded local folder through scoped tokens and 
     });
     mcp = new Client({ name: 'test', version: '1' }, { capabilities: {} });
     await mcp.connect(transport);
-    assert.equal((await mcp.listTools()).tools.length, 4);
+    assert.equal((await mcp.listTools()).tools.length, 5);
     async function tool(name: string, args: Record<string, unknown>) {
       const r = await mcp!.callTool({ name, arguments: args });
       assert.ok(!r.isError, JSON.stringify(r));

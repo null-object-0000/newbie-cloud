@@ -17,7 +17,9 @@ import type { Account } from '../shared';
 import type { Api } from './resources';
 import { describe, validateAssets, type Asset } from '../projects/files';
 import './projects.css';
-type Project = {
+import { ExistingSite, ImportSite } from './existing-projects';
+import type { LinkedResource, ExistingDetail } from '../projects/types';
+export type Project = {
   id: string;
   name: string;
   account_id: string;
@@ -26,6 +28,10 @@ type Project = {
   current_release: string | null;
   active_task: string | null;
   error: string | null;
+  management?: 'direct' | 'existing';
+  provider?: string;
+  primaryUrl?: string | null;
+  resourceLinks?: LinkedResource[];
 };
 type Release = {
   id: string;
@@ -40,7 +46,7 @@ type Release = {
   updated_at: string;
   target_release: string | null;
 };
-type Detail = { project: Project; url: string; releases: Release[] };
+type Detail = { project: Project; url: string; releases: Release[]; linked?: ExistingDetail };
 const labels: Record<string, string> = {
   new: '待创建站点',
   provisioning: '创建中',
@@ -107,6 +113,7 @@ export function Projects({
     [creating, setCreating] = useState(false),
     [name, setName] = useState(''),
     [accountId, setAccountId] = useState('');
+  const [importing, setImporting] = useState(false);
   const [selected, setSelected] = useState<{ file: File; asset: Asset }[]>([]),
     [message, setMessage] = useState(''),
     [rollback, setRollback] = useState<Release | null>(null),
@@ -242,6 +249,25 @@ export function Projects({
     if (!['failed', 'review_required'].includes(sent.release.status)) setPending(rid);
   }
   const project = detail?.project;
+  if (detail?.linked && project)
+    return (
+      <ExistingSite
+        project={project}
+        detail={detail.linked}
+        api={api}
+        accounts={accounts}
+        onBack={() => {
+          activeId.current = null;
+          onProjectChange?.('');
+          setDetail(null);
+          void run(load);
+        }}
+        onUpdated={async () => {
+          setDetail(await api('/projects/' + project.id));
+          await load();
+        }}
+      />
+    );
   return (
     <>
       {error && (
@@ -257,7 +283,7 @@ export function Projects({
       {!detail ? (
         <>
           <p className="project-scope-note">
-            这里管理通过 Newbie Cloud 创建的网站，当前支持 Cloudflare Pages。
+            新建网站可直接发布到 Cloudflare Pages；已有站点可接管源码、自动部署、域名和资源关联。
             {onResources && (
               <>
                 已有的云端网站、Workers 和 EdgeOne 服务，可到
@@ -275,6 +301,9 @@ export function Projects({
                   的免费托管地址。更新与回滚都在同一个项目里完成。
                 </p>
                 <div className="project-actions">
+                  <button className="secondary" disabled={busy} onClick={() => setImporting(true)}>
+                    接管已有站点
+                  </button>
                   <button
                     className="primary"
                     disabled={busy}
@@ -310,6 +339,9 @@ export function Projects({
                 网站列表 <small>（{projects.length}）</small>
               </h2>
               <div className="project-actions" style={{ marginTop: 0 }}>
+                <button className="secondary" disabled={busy} onClick={() => setImporting(true)}>
+                  接管已有站点
+                </button>
                 <button
                   className="primary"
                   disabled={busy}
@@ -339,11 +371,18 @@ export function Projects({
                   <Folder size={25} />
                   <h3>{p.name}</h3>
                   <span className="pill">
-                    {p.current_release ? '已有线上版本' : labels[p.status]}
+                    {p.management === 'existing'
+                      ? '已接管 · 原流程部署'
+                      : p.current_release
+                        ? '已有线上版本'
+                        : labels[p.status]}
                   </span>
-                  <p>{p.remote_name}.pages.dev</p>
+                  <p>{p.primaryUrl ?? p.remote_name + '.pages.dev'}</p>
                   <small>
-                    {accounts.find((a) => a.id === p.account_id)?.name ?? 'Cloudflare'} · 静态网页
+                    {accounts.find((a) => a.id === p.account_id)?.name ??
+                      p.provider ??
+                      'Cloudflare'}{' '}
+                    · {p.management === 'existing' ? '已有站点' : '静态网页'}
                   </small>
                   <span className="project-card-link">管理项目 →</span>
                 </button>
@@ -620,6 +659,19 @@ export function Projects({
             ))}
           </section>
         </>
+      )}
+      {importing && (
+        <ImportSite
+          api={api}
+          accounts={accounts}
+          onClose={() => setImporting(false)}
+          onImported={async (pid) => {
+            setImporting(false);
+            await api('/projects/' + pid + '/refresh', 'POST', {});
+            await load();
+            await open(pid);
+          }}
+        />
       )}
       {creating && (
         <Dialog
