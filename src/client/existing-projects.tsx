@@ -398,7 +398,7 @@ export function ExistingSite({
                   <small>
                     读取于 {date(o.succeeded_at)} ·{' '}
                     {o.data.total === null ? '平台未返回总数' : `共 ${o.data.total} 条`}
-                    {o.data.hasMore ? '，此处展示最近 50 条' : ''}
+                    {o.data.hasMore ? `，此处展示最近 ${o.data.pageSize ?? 50} 条` : ''}
                   </small>
                   <div className="table-scroll">
                     <table className="resource-table">

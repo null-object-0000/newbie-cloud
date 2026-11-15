@@ -36,6 +36,21 @@ type Link = {
 };
 const message = (e: unknown) => (e instanceof HttpError ? e.message : '读取未完成，请稍后重试');
 const text = (v: unknown, max = 200) => (typeof v === 'string' ? v.slice(0, max) : '');
+async function sourceBytes(url: string, fetcher: Fetch, limit: number) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await sourceFetch(url, fetcher, limit);
+    } catch (e) {
+      if (attempt === 2 || !(e instanceof HttpError) || !/HTTP 50[0234]/.test(e.message))
+        throw new HttpError(
+          502,
+          'GitHub 源文件读取暂不可用，请核实公开仓库、文件路径与固定提交后重试',
+        );
+      await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+    }
+  }
+  throw new HttpError(502, 'GitHub 源文件读取失败');
+}
 const domains = (values: unknown[]) =>
   [
     ...new Set(
@@ -138,7 +153,7 @@ async function reader(env: Env, h: HostingInput, fetcher: Fetch) {
         };
       },
       deployments: async () => {
-        const rows = await cf.api(cf.root(h.externalId) + '/deployments?page=1&per_page=50');
+        const rows = await cf.api(cf.root(h.externalId) + '/deployments?page=1&per_page=25');
         if (!Array.isArray(rows)) throw new HttpError(502, 'Pages 部署列表无效');
         return {
           items: rows.map((d: any) => ({
@@ -148,7 +163,8 @@ async function reader(env: Env, h: HostingInput, fetcher: Fetch) {
             createdAt: text(d.created_on),
             commit: text(d.deployment_trigger?.metadata?.commit_hash, 64),
           })),
-          hasMore: rows.length === 50,
+          hasMore: rows.length === 25,
+          pageSize: 25,
           total: null,
         };
       },
@@ -216,6 +232,7 @@ async function reader(env: Env, h: HostingInput, fetcher: Fetch) {
           current: r.UsedInProd === true,
         })),
         total: Number(d.TotalCount ?? d.Deployments.length),
+        pageSize: 50,
         hasMore: Number(d.TotalCount ?? 0) > 50 || d.Deployments.length === 50,
       };
     },
@@ -280,8 +297,8 @@ async function verifySource(
   const commit = await resolveCommit(s, env, fetcher),
     base = `https://raw.githubusercontent.com/${s.repository}/${commit}/`;
   const [wf, script] = await Promise.all([
-    sourceFetch(base + s.workflow, fetcher, 128000),
-    sourceFetch(base + s.deployScript, fetcher, 256000),
+    sourceBytes(base + s.workflow, fetcher, 128000),
+    sourceBytes(base + s.deployScript, fetcher, 256000),
   ]);
   const workflow = new TextDecoder().decode(wf),
     code = new TextDecoder().decode(script);
@@ -324,8 +341,9 @@ async function workflowStatus(s: Source, env: Env, fetcher: Fetch) {
   } catch {
     const url = `https://github.com/${s.repository}/actions/workflows/${s.workflow.split('/').pop()!}/badge.svg?branch=${encodeURIComponent(s.branch)}`;
     const svg = new TextDecoder().decode(await sourceFetch(url, fetcher, 64000)),
-      label = svg.match(/aria-label="([^"]+)"/)?.[1] ?? '';
-    const result = label.match(/: (passing|failing|pending|no status|not found)$/)?.[1];
+      label =
+        svg.match(/aria-label="([^"]+)"/)?.[1] ?? svg.match(/<title>([^<]+)<\/title>/)?.[1] ?? '';
+    const result = label.match(/[:\-]\s*(passing|failing|pending|no status|not found)\s*$/)?.[1];
     if (!result) throw new HttpError(502, '未能读取 GitHub 工作流状态，可通过原链接查看');
     return { mode: 'badge', status: result, items: [] };
   }

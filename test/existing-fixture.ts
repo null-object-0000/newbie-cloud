@@ -5,6 +5,8 @@ export function existingFixture() {
     domain = 'www.example.com',
     zone = 'zone-workspace';
   let bound = true,
+    sourceFailures = 0,
+    githubLimited = false,
     failDeployments = false,
     wrongScript = false,
     head = 'a'.repeat(40),
@@ -75,6 +77,7 @@ export function existingFixture() {
       });
     }
     if (u.hostname === 'raw.githubusercontent.com') {
+      if (sourceFailures-- > 0) return new Response('Unavailable', { status: 503 });
       assert.equal(headers.has('Authorization'), false);
       return new Response(
         u.pathname.endsWith('.yml')
@@ -83,6 +86,8 @@ export function existingFixture() {
       );
     }
     if (u.hostname === 'api.github.com') {
+      if (githubLimited && u.pathname.includes('/actions/'))
+        return new Response('{}', { status: 403 });
       assert.equal(headers.has('Authorization'), false);
       return Response.json(
         u.pathname.includes('/actions/')
@@ -101,7 +106,10 @@ export function existingFixture() {
           : [{ sha: head }],
       );
     }
+    if (u.hostname === 'github.com' && u.pathname.endsWith('/badge.svg'))
+      return new Response('<svg><title>Deploy site - passing</title></svg>');
     if (u.hostname === 'api.cloudflare.com') {
+      if (u.pathname.endsWith('/deployments')) assert.equal(u.searchParams.get('per_page'), '25');
       assert.equal(init?.method, 'GET');
       const name = u.pathname.endsWith('/deployments') ? 'deployments' : 'legacy';
       return Response.json({
@@ -119,6 +127,12 @@ export function existingFixture() {
     throw Error('Unexpected outbound host ' + u.hostname);
   };
   return {
+    transientSourceFailures(n: number) {
+      sourceFailures = n;
+    },
+    limitGithub(v: boolean) {
+      githubLimited = v;
+    },
     fetcher,
     projectId,
     domain,

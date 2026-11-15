@@ -8,6 +8,23 @@ import { loadKeys } from '../src/node/runtime';
 import { createApp } from '../src/server/index';
 import type { Env } from '../src/server/types';
 import { existingFixture } from './existing-fixture';
+
+test('transient public source failures retry reads and GitHub title badges remain distinct from run records', async () =>
+  setup(async ({ call, fixture, input }: any) => {
+    fixture.transientSourceFailures(1);
+    fixture.limitGithub(true);
+    const p = await call('/projects/import/preview', 'POST', input);
+    assert.equal(p.status, 200, JSON.stringify(p.body));
+    const imported = await call('/projects/import/confirm', 'POST', {
+      previewId: p.body.id,
+      confirmAssociationOnly: true,
+    });
+    const fresh = await call('/projects/' + imported.body.project.id + '/refresh', 'POST', {});
+    const badge = fresh.body.linked.observations.find((o: any) => o.data?.mode === 'badge');
+    assert.equal(badge.data.status, 'passing');
+    assert.deepEqual(badge.data.items, []);
+    assert.ok(fresh.body.linked.observations.every((o: any) => !o.error));
+  }));
 async function setup(fn: (ctx: any) => Promise<void>) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'newbie-existing-')),
     keys = loadKeys(dir),
