@@ -1,3 +1,4 @@
+import { Dialog } from './dialog';
 import type { Project } from './projects';
 import { useEffect, useState } from 'react';
 import { ArrowRight, ExternalLink, Globe2, RefreshCw, Search } from 'lucide-react';
@@ -308,6 +309,7 @@ export function ResourceExplorer({
   onOpenZone,
   category,
   onSync,
+  hideDomainFilter = false,
   domainFilter,
   setDomainFilter,
 }: Common & {
@@ -315,9 +317,11 @@ export function ResourceExplorer({
   onOpenProject?: (id: string) => void;
   category: Exclude<Category, 'registrations'>;
   onSync: () => void;
+  hideDomainFilter?: boolean;
   domainFilter: string;
   setDomainFilter: (name: string) => void;
 }) {
+  const [detail, setDetail] = useState<any>(null);
   const [account, setAccount] = useState(''),
     [query, setQuery] = useState(''),
     [page, setPage] = useState(1);
@@ -376,19 +380,21 @@ export function ResourceExplorer({
             ))}
           </select>
         </label>
-        <label>
-          域名范围
-          <select
-            aria-label="资源域名范围"
-            value={domainFilter}
-            onChange={(e) => setDomainFilter(e.target.value)}
-          >
-            <option value="">全部域名</option>
-            {domains.map((d) => (
-              <option key={d.name}>{d.name}</option>
-            ))}
-          </select>
-        </label>
+        {!hideDomainFilter && (
+          <label>
+            域名范围
+            <select
+              aria-label="资源域名范围"
+              value={domainFilter}
+              onChange={(e) => setDomainFilter(e.target.value)}
+            >
+              <option value="">全部域名</option>
+              {domains.map((d) => (
+                <option key={d.name}>{d.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="search">
           <Search size={17} />
           <input
@@ -411,9 +417,9 @@ export function ResourceExplorer({
         {category === 'records' && ' 不同平台的同名记录保留各自来源，不会混成一条。'}
       </p>
       <SourceIssues snapshots={snapshots} category={category} accounts={accounts} />
-      <section className="panel">
+      <section className="panel resource-list">
         <div className="table-scroll">
-          <table className="resource-table">
+          <table className="resource-table console-table">
             <thead>
               <tr>
                 <th>
@@ -520,6 +526,9 @@ export function ResourceExplorer({
                       )}
                     </td>
                     <td>
+                      <button className="secondary compact" onClick={() => setDetail(r)}>
+                        详情
+                      </button>
                       {managed && onOpenProject && (
                         <button
                           className="secondary compact"
@@ -583,6 +592,56 @@ export function ResourceExplorer({
           </div>
         </div>
       </section>
+      {detail && (
+        <Dialog
+          title={detail.name || detail.domain || '资源详情'}
+          drawer
+          onClose={() => setDetail(null)}
+        >
+          <div className="modal-body">
+            <dl className="console-definition">
+              <dt>来源账号</dt>
+              <dd>{accounts.find((a) => a.id === detail.accountId)?.name}</dd>
+              <dt>最近同步</dt>
+              <dd>{time(detail.checkedAt)}</dd>
+              {category === 'records' ? (
+                <>
+                  <dt>记录类型</dt>
+                  <dd>{detail.type}</dd>
+                  <dt>完整内容</dt>
+                  <dd className="resource-full-value">{detail.content}</dd>
+                  <dt>TTL / 优先级</dt>
+                  <dd>
+                    {detail.ttl === 1 ? '自动' : detail.ttl + ' 秒'} / {detail.priority ?? '—'}
+                  </dd>
+                </>
+              ) : category === 'email' ? (
+                <>
+                  <dt>状态</dt>
+                  <dd>{detail.enabled ? '启用' : '停用'}</dd>
+                  <dt>匹配条件</dt>
+                  <dd>
+                    <pre>{JSON.stringify(detail.matchers, null, 2)}</pre>
+                  </dd>
+                  <dt>转发操作</dt>
+                  <dd>
+                    <pre>{JSON.stringify(detail.actions, null, 2)}</pre>
+                  </dd>
+                </>
+              ) : (
+                <>
+                  <dt>状态</dt>
+                  <dd>{detail.status}</dd>
+                  <dt>到期时间</dt>
+                  <dd>{time(detail.expiresAt)}</dd>
+                  <dt>续期管理</dt>
+                  <dd>{detail.managed ? '由原平台管理' : '请在原平台核对'}</dd>
+                </>
+              )}
+            </dl>
+          </div>
+        </Dialog>
+      )}
     </>
   );
 }

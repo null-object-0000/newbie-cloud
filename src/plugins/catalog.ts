@@ -6,6 +6,7 @@ export const builtinPlugins: PluginManifest[] = [
   ['domains', '域名总览', '按域名合并注册、DNS 与资源，并核实公共 NS'],
   ['dns', 'DNS 管理', '记录查询、变更预览、保护确认和写入'],
   ['services', '托管服务', '统一展示各平台的站点和边缘服务'],
+  ['storage', '对象存储', '读取 Cloudflare R2 存储桶清单'],
   ['email', '邮箱转发', '读取 Cloudflare Email Routing'],
   ['certificates', '证书巡检', '查询证书并按定时任务检查'],
   ['servers', '云服务器', '汇总 ECS / CVM 的全部账号与地域'],
@@ -24,7 +25,13 @@ export const builtinPlugins: PluginManifest[] = [
 }));
 export const builtinIds = new Set(builtinPlugins.map((p) => p.id));
 export const viewPlugins: Record<string, BuiltinPluginId> = {
+  storage: 'storage',
   dns: 'domains',
+  'domain-overview': 'domains',
+  registrations: 'domains',
+  compute: 'services',
+  workers: 'services',
+  projects: 'services',
   records: 'dns',
   services: 'services',
   email: 'email',

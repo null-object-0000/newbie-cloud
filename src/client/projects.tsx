@@ -1,3 +1,4 @@
+import { Dialog as FocusDialog } from './dialog';
 import { useEffect, useRef, useState } from 'react';
 import {
   Folder,
@@ -73,21 +74,15 @@ function Dialog({
   children: React.ReactNode;
 }) {
   return (
-    <div className="modal-backdrop">
-      <section className="modal wide" role="dialog" aria-modal="true" aria-label={title}>
-        <header>
-          <h2>{title}</h2>
-          <button className="icon-button" aria-label="关闭" onClick={onClose}>
-            <X size={20} />
-          </button>
-        </header>
-        <div className="modal-body">{children}</div>
-      </section>
-    </div>
+    <FocusDialog title={title} onClose={onClose} wide>
+      <div className="modal-body">{children}</div>
+    </FocusDialog>
   );
 }
 export function Projects({
   initialProjectId = '',
+  initialProjects = [],
+  renderIndex,
   onProjectChange,
   onProjectsChange,
   onResources,
@@ -97,6 +92,14 @@ export function Projects({
   onAccounts,
 }: {
   initialProjectId?: string;
+  initialProjects?: Project[];
+  renderIndex: (actions: {
+    busy: boolean;
+    projects: Project[];
+    onOpen: (id: string) => void;
+    onCreate: () => void;
+    onImport: (candidate?: { accountId: string; externalId: string }) => void;
+  }) => React.ReactNode;
   onProjectChange?: (id: string) => void;
   onProjectsChange?: (items: Project[]) => void;
   onResources?: () => void;
@@ -105,7 +108,7 @@ export function Projects({
   onConnect: () => void;
   onAccounts: () => void;
 }) {
-  const [projects, setProjects] = useState<Project[]>([]),
+  const [projects, setProjects] = useState<Project[]>(initialProjects),
     [detail, setDetail] = useState<Detail | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -114,6 +117,9 @@ export function Projects({
     [name, setName] = useState(''),
     [accountId, setAccountId] = useState('');
   const [importing, setImporting] = useState(false);
+  const [importCandidate, setImportCandidate] = useState<
+    { accountId: string; externalId: string } | undefined
+  >();
   const [selected, setSelected] = useState<{ file: File; asset: Asset }[]>([]),
     [message, setMessage] = useState(''),
     [rollback, setRollback] = useState<Release | null>(null),
@@ -135,7 +141,9 @@ export function Projects({
   };
   async function open(projectId: string) {
     activeId.current = projectId;
-    setDetail(await api('/projects/' + projectId));
+    const next = await api('/projects/' + projectId);
+    if (activeId.current !== projectId) return;
+    setDetail(next);
     onProjectChange?.(projectId);
     setSelected([]);
     setError('');
@@ -160,12 +168,20 @@ export function Projects({
   useEffect(() => {
     void run(async () => {
       await load();
-      if (initialProjectId) await open(initialProjectId);
     });
     return () => {
       activeId.current = null;
     };
   }, []);
+  useEffect(() => {
+    if (initialProjectId && activeId.current !== initialProjectId)
+      void run(() => open(initialProjectId));
+    else if (!initialProjectId) {
+      activeId.current = null;
+      setDetail(null);
+      setPending(null);
+    }
+  }, [initialProjectId]);
   async function checkRelease(rid: string) {
     const pid = activeId.current;
     if (!pid) return;
@@ -281,115 +297,19 @@ export function Projects({
         </p>
       )}
       {!detail ? (
-        <>
-          <p className="project-scope-note">
-            新建网站可直接发布到 Cloudflare Pages；已有站点可接管源码、自动部署、域名和资源关联。
-            {onResources && (
-              <>
-                已有的云端网站、Workers 和 EdgeOne 服务，可到
-                <button onClick={onResources}>资源 → 站点与函数</button>查看。
-              </>
-            )}
-          </p>
-          {!projects.length && (
-            <section className="panel project-hero">
-              <div>
-                <span className="eyebrow">从一个网页开始</span>
-                <h2>做好的网页，现在就上线。</h2>
-                <p>
-                  连接一个 Cloudflare 账号，上传 HTML 或构建目录，获得带 HTTPS
-                  的免费托管地址。更新与回滚都在同一个项目里完成。
-                </p>
-                <div className="project-actions">
-                  <button className="secondary" disabled={busy} onClick={() => setImporting(true)}>
-                    接管已有站点
-                  </button>
-                  <button
-                    className="primary"
-                    disabled={busy}
-                    onClick={() => {
-                      setCreating(true);
-                      setAccountId(available[0]?.id ?? '');
-                    }}
-                  >
-                    <Plus size={18} />
-                    {projects.length ? '新建网页项目' : '发布我的第一个网页'}
-                  </button>
-                  <a
-                    className="secondary"
-                    href="https://developers.cloudflare.com/pages/platform/limits/"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    查看免费额度
-                    <ExternalLink size={15} />
-                  </a>
-                </div>
-              </div>
-              <div className="project-steps">
-                <span>01　连接一个账号</span>
-                <span>02　选择静态文件</span>
-                <span>03　发布并验证链接</span>
-              </div>
-            </section>
-          )}
-          {!!projects.length && (
-            <div className="inventory-toolbar">
-              <h2>
-                网站列表 <small>（{projects.length}）</small>
-              </h2>
-              <div className="project-actions" style={{ marginTop: 0 }}>
-                <button className="secondary" disabled={busy} onClick={() => setImporting(true)}>
-                  接管已有站点
-                </button>
-                <button
-                  className="primary"
-                  disabled={busy}
-                  onClick={() => {
-                    setCreating(true);
-                    setAccountId(available[0]?.id ?? '');
-                  }}
-                >
-                  <Plus size={17} />
-                  新建网站项目
-                </button>
-                <button className="secondary" disabled={busy} onClick={() => void run(load)}>
-                  <RefreshCw size={16} />
-                  刷新项目
-                </button>
-              </div>
-            </div>
-          )}
-          {!!projects.length && (
-            <div className="project-grid">
-              {projects.map((p) => (
-                <button
-                  className="panel project-card"
-                  key={p.id}
-                  onClick={() => void run(() => open(p.id))}
-                >
-                  <Folder size={25} />
-                  <h3>{p.name}</h3>
-                  <span className="pill">
-                    {p.management === 'existing'
-                      ? '已接管 · 原流程部署'
-                      : p.current_release
-                        ? '已有线上版本'
-                        : labels[p.status]}
-                  </span>
-                  <p>{p.primaryUrl ?? p.remote_name + '.pages.dev'}</p>
-                  <small>
-                    {accounts.find((a) => a.id === p.account_id)?.name ??
-                      p.provider ??
-                      'Cloudflare'}{' '}
-                    · {p.management === 'existing' ? '已有站点' : '静态网页'}
-                  </small>
-                  <span className="project-card-link">管理项目 →</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </>
+        renderIndex({
+          busy,
+          projects,
+          onOpen: (pid) => void run(() => open(pid)),
+          onCreate: () => {
+            setCreating(true);
+            setAccountId(available[0]?.id ?? '');
+          },
+          onImport: (candidate) => {
+            setImportCandidate(candidate);
+            setImporting(true);
+          },
+        })
       ) : (
         <>
           <div className="project-top">
@@ -662,6 +582,7 @@ export function Projects({
       )}
       {importing && (
         <ImportSite
+          initialResource={importCandidate}
           api={api}
           accounts={accounts}
           onClose={() => setImporting(false)}

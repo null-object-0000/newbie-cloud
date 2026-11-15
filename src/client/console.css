@@ -1,0 +1,941 @@
+/* Product console: persistent navigation, compact resource tables, contextual details. */
+.console-app {
+  min-height: 100dvh;
+  background: var(--canvas);
+}
+.console-app .sidebar {
+  width: 236px;
+  padding: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+}
+.console-app .brand {
+  height: 76px;
+  min-height: 76px;
+  padding: 18px 20px;
+  font-size: 17px;
+  border-bottom: 1px solid var(--border-soft);
+  gap: 10px;
+}
+.console-app .brand small {
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 1px;
+  letter-spacing: 0;
+}
+.console-app .brand-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  box-shadow: none;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.console-app .product-navigation {
+  padding: 18px 12px;
+  overflow: auto;
+  flex: 1;
+  display: block;
+}
+.console-app .product-navigation button {
+  width: 100%;
+  font-size: 15px;
+  min-height: 42px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 5px;
+  text-align: left;
+  color: var(--text-secondary);
+  margin: 2px 0;
+  font-weight: 450;
+}
+.console-app .product-navigation button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.console-app .product-navigation button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.console-app .product-group {
+  margin-top: 12px;
+}
+.console-app .product-title {
+  font-weight: 600 !important;
+  color: var(--text) !important;
+}
+.console-app .product-title > svg:last-child {
+  margin-left: auto;
+  transition: transform 0.12s;
+}
+.console-app .selected > .product-title > svg:last-child {
+  transform: rotate(90deg);
+}
+.console-app .product-children {
+  border-left: 1px solid var(--border);
+  margin: 4px 0 8px 20px;
+  padding-left: 10px;
+}
+.console-app .product-children button {
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+.console-app .sidebar-bottom {
+  position: static;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-soft);
+  margin-top: auto;
+  font-size: 14px;
+}
+.console-app .free-note {
+  display: none;
+}
+.console-app .sidebar-bottom > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+.console-app .main-shell {
+  margin-left: 236px;
+  min-width: 0;
+}
+.console-app .topbar {
+  height: 62px;
+  padding: 0 30px;
+  border-bottom: 1px solid var(--border);
+  box-shadow: none;
+  background: var(--surface);
+  gap: 12px;
+}
+.console-app .topbar strong,
+.console-app .breadcrumb {
+  font-size: 14px;
+  font-weight: 450;
+}
+.console-app .topbar-actions {
+  margin-left: auto;
+  gap: 14px;
+}
+.console-app .owner {
+  font-size: 13px;
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+}
+.console-app .content {
+  max-width: 1600px;
+  padding: 30px 32px 60px;
+  margin: 0 auto;
+}
+.console-app .page-heading {
+  margin: 0 0 26px;
+  align-items: center;
+  gap: 18px;
+}
+.console-app h1 {
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+.console-app .page-heading p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+  max-width: 850px;
+  line-height: 1.65;
+}
+.console-app .panel {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: none;
+  background: var(--surface);
+}
+.console-app button.primary,
+.console-app button.secondary,
+.console-app a.secondary,
+.console-app .primary,
+.console-app .secondary {
+  border-radius: 5px;
+  min-height: 38px;
+  padding: 8px 13px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: none;
+  gap: 7px;
+}
+.console-app input,
+.console-app select,
+.console-app textarea {
+  border-radius: 5px;
+  font-size: 15px;
+  background: var(--surface);
+  color: var(--text);
+  min-height: 38px;
+}
+.console-app select {
+  max-width: 100%;
+}
+.console-app .search {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  min-width: 160px;
+  background: var(--surface);
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+}
+.console-app .search input {
+  border: none;
+  min-height: 34px;
+  padding: 4px 0;
+  width: 100%;
+  outline: none;
+  background: transparent;
+}
+.console-app .search:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.console-app .status,
+.console-app .pill {
+  font-size: 12px;
+  font-weight: 450;
+  border-radius: 4px;
+  line-height: 1.6;
+  white-space: normal;
+}
+.console-app .console-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 24px;
+  padding: 20px 0;
+}
+.console-app .console-metrics > div,
+.console-app .console-metrics > button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 0 24px;
+  border-right: 1px solid var(--border-soft);
+  gap: 3px;
+}
+.console-app .console-metrics > :last-child {
+  border-right: 0;
+}
+.console-app .console-metrics span {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.console-app .console-metrics strong {
+  font-size: 28px;
+  font-weight: 550;
+  letter-spacing: -0.5px;
+}
+.console-app .console-metrics small {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.console-app .domain-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.console-app .domain-metrics button:hover {
+  color: var(--accent);
+}
+.console-app .console-list {
+  padding: 0;
+  overflow: hidden;
+  margin-bottom: 22px;
+}
+.console-list-toolbar {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.console-list-toolbar .search {
+  flex: 1;
+  max-width: 400px;
+  margin-right: auto;
+}
+.console-list-toolbar select {
+  width: auto;
+  padding: 7px 30px 7px 10px;
+}
+.table-scroll {
+  overflow-x: auto;
+  width: 100%;
+  overscroll-behavior-x: contain;
+}
+.console-app .console-table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: normal;
+}
+.console-app .console-table th {
+  background: var(--surface-soft);
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-secondary);
+  padding: 12px 18px;
+  text-align: left;
+  letter-spacing: 0;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+.console-app .console-table td {
+  padding: 17px 18px;
+  font-size: 14px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border-soft);
+  max-width: 360px;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+}
+.console-app .console-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.console-app .console-table tbody tr:hover {
+  background: var(--surface-soft);
+}
+.console-table td > small,
+.console-table .resource-link small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 4px;
+  text-align: left;
+}
+.resource-link {
+  color: var(--accent);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  padding: 0;
+  overflow-wrap: anywhere;
+}
+.resource-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.console-app .compact {
+  min-height: 30px !important;
+  padding: 5px 9px !important;
+  font-size: 12px !important;
+  white-space: nowrap;
+}
+.console-app .icon-button {
+  border-radius: 4px;
+  min-width: 30px;
+  min-height: 30px;
+}
+.table-footer {
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.table-footer > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.console-empty {
+  padding: 52px 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.console-empty > svg {
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.console-empty h3 {
+  font-size: 17px;
+  color: var(--text);
+  font-weight: 550;
+}
+.console-empty p {
+  font-size: 14px;
+  margin: 9px auto 16px;
+  max-width: 520px;
+}
+.console-footnote {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.8;
+  margin: 16px 0;
+}
+.console-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  margin-bottom: 22px;
+}
+.console-app .console-detail {
+  padding: 22px;
+}
+.console-detail h2 {
+  font-size: 16px;
+}
+.console-detail .panel-title {
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.console-definition {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 14px 20px;
+  margin: 20px 0;
+  font-size: 14px;
+}
+.console-definition dt {
+  color: var(--text-secondary);
+}
+.console-definition dd {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.console-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.console-heading-actions > div:last-child {
+  display: flex;
+  gap: 10px;
+}
+.console-segment {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--border);
+  align-self: stretch;
+}
+.console-segment button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  padding: 10px 0;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.console-segment button[aria-pressed='true'] {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+  font-weight: 550;
+}
+.console-segment span {
+  border-radius: 4px;
+  background: var(--surface-hover);
+  font-size: 11px;
+  min-width: 22px;
+  padding: 1px 5px;
+  text-align: center;
+}
+.console-filter-note {
+  display: flex;
+  gap: 12px;
+  font-size: 14px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.type-badge {
+  font:
+    12px ui-monospace,
+    monospace;
+  display: inline-block;
+  padding: 3px 6px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.domain-cell > span {
+  display: block;
+  font-size: 13px;
+}
+.domain-scope {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+.domain-scope select {
+  max-width: 350px;
+  padding: 5px 30px 5px 10px;
+  font-size: 14px;
+}
+.console-app .text-button {
+  padding: 0;
+  color: var(--accent);
+  font-size: 14px;
+}
+.console-app .toast {
+  position: static;
+  max-width: none;
+  width: auto;
+  transform: none;
+  display: flex;
+  margin: 0 0 20px;
+  box-shadow: none;
+  border-radius: 5px;
+  font-size: 14px;
+  gap: 12px;
+}
+.modal {
+  border-radius: 8px !important;
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  box-shadow: var(--shadow);
+  max-width: calc(100vw - 32px);
+}
+.modal header {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.modal header h2 {
+  font-size: 18px;
+}
+.modal-backdrop {
+  padding: 20px;
+  overflow: auto;
+  z-index: 100;
+}
+.drawer-backdrop {
+  display: flex;
+  align-items: stretch !important;
+  justify-content: flex-end !important;
+  padding: 0;
+}
+.console-drawer {
+  height: 100dvh;
+  max-height: 100dvh;
+  width: 480px !important;
+  max-width: 100vw;
+  border-radius: 0 !important;
+  margin: 0 !important;
+}
+.drawer-action {
+  border-top: 1px solid var(--border);
+  margin-top: 28px;
+  padding-top: 22px;
+}
+.drawer-action p {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 18px;
+}
+.console-app .stats {
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.console-app .stat-card {
+  border-radius: 6px;
+  padding: 20px;
+  box-shadow: none;
+}
+.console-app .quick-grid {
+  display: none;
+}
+.console-app .project-detail-heading {
+  margin-bottom: 22px;
+}
+.console-app .existing-summary {
+  border-radius: 6px;
+  box-shadow: none;
+}
+.console-app .existing-card,
+.console-app .project-publish {
+  border-radius: 6px;
+}
+.console-app .footer {
+  border-top: 1px solid var(--border-soft);
+  margin-top: 36px;
+  font-size: 12px;
+}
+.mobile-menu,
+.sidebar-overlay {
+  display: none;
+}
+@media (max-width: 1050px) {
+  .console-app .content {
+    padding: 24px 22px;
+  }
+  .console-app .topbar {
+    padding: 0 22px;
+  }
+  .console-app .console-table td {
+    padding: 15px 12px;
+  }
+  .console-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .console-app .owner {
+    display: none;
+  }
+}
+@media (max-width: 840px) {
+  .console-app .sidebar {
+    width: 250px;
+    transform: translateX(-100%);
+    transition: transform 0.16s;
+  }
+  .console-app .sidebar.is-open {
+    transform: none;
+  }
+  .console-app .main-shell {
+    margin-left: 0;
+    width: 100%;
+    min-height: 100dvh;
+  }
+  .console-app .mobile-menu {
+    display: flex;
+    flex-shrink: 0;
+  }
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: var(--overlay);
+    z-index: 49;
+    width: 100%;
+    height: 100dvh;
+  }
+  .console-app .topbar {
+    padding: 0 16px;
+    gap: 8px;
+    height: 60px;
+  }
+  .console-app .topbar > div:first-of-type {
+    gap: 6px;
+    min-width: 0;
+  }
+  .console-app .topbar strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 140px;
+  }
+  .console-app .topbar-actions {
+    gap: 7px;
+  }
+  .console-app .content {
+    padding: 22px 16px 40px;
+  }
+  .console-app h1 {
+    font-size: 24px;
+  }
+  .console-app .page-heading {
+    margin-bottom: 22px;
+    align-items: flex-start;
+  }
+  .console-app .page-heading p {
+    font-size: 14px;
+  }
+  .console-app .console-metrics {
+    padding: 16px 0;
+    gap: 0;
+  }
+  .console-app .console-metrics > div,
+  .console-app .console-metrics > button {
+    padding: 0 12px;
+  }
+  .console-app .console-metrics strong {
+    font-size: 24px;
+  }
+  .console-app .console-metrics small {
+    display: none;
+  }
+  .console-app .console-metrics span {
+    font-size: 12px;
+  }
+  .console-app .domain-metrics {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px 0;
+  }
+  .console-app .domain-metrics > :nth-child(2) {
+    border-right: 0;
+  }
+  .console-app .console-table {
+    min-width: 760px;
+  }
+  .console-app .console-list-toolbar {
+    padding: 12px;
+    gap: 10px;
+  }
+  .console-app .console-list-toolbar .search {
+    min-width: 160px;
+    max-width: none;
+  }
+  .console-heading-actions > div:last-child {
+    flex-wrap: wrap;
+  }
+  .console-heading-actions {
+    gap: 18px;
+  }
+  .console-segment {
+    width: 100%;
+  }
+  .console-definition {
+    grid-template-columns: 90px minmax(0, 1fr);
+    gap: 12px;
+    font-size: 14px;
+  }
+  .table-footer {
+    padding: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .console-app .console-detail {
+    padding: 18px;
+  }
+  .domain-scope select {
+    min-width: 0;
+    max-width: calc(100vw - 135px);
+  }
+  .console-app .sidebar .brand {
+    font-size: 17px;
+  }
+  .console-app .sidebar .brand small {
+    display: block;
+  }
+  .console-app .sidebar .sidebar-bottom {
+    padding: 16px 20px;
+  }
+  .console-app .sidebar .sidebar-bottom > button {
+    font-size: 14px;
+  }
+  .console-app .modal-backdrop {
+    padding: 12px;
+  }
+  .console-app .drawer-backdrop {
+    padding: 0;
+  }
+  .console-app .modal-body {
+    padding: 20px;
+  }
+  .console-app .inventory-toolbar {
+    flex-wrap: wrap;
+  }
+  .console-app .inventory-toolbar > * {
+    max-width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .console-app .sidebar,
+  .console-app .product-title > svg:last-child {
+    transition: none;
+  }
+}
+
+.console-app .console-list-toolbar .search {
+  margin-left: 0;
+}
+.console-app .console-table td {
+  font-size: 15px;
+}
+.console-app .domain-cell > span {
+  font-size: 14px;
+}
+.console-app .product-children button {
+  font-size: 15px;
+}
+.console-app .stat {
+  border-radius: 6px;
+  box-shadow: none;
+}
+.console-app .product-navigation button.active:before {
+  display: none;
+}
+
+.console-app .resource-list {
+  padding: 0;
+  overflow: hidden;
+}
+.console-app .resource-record-value {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-height: 66px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.console-app .resource-table td:last-child > .secondary {
+  margin: 3px;
+}
+.console-app .resource-table pre {
+  max-height: 66px;
+  overflow: hidden;
+  font-size: 12px;
+}
+.resource-full-value {
+  font:
+    13px/1.8 ui-monospace,
+    monospace;
+  overflow-wrap: anywhere;
+}
+.console-drawer pre {
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.console-app .inventory-note {
+  font-size: 12px;
+  margin: 14px 0;
+  color: var(--text-muted);
+}
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 36px 20px;
+  background: var(--canvas);
+}
+.login-page .login-card {
+  width: 460px;
+  max-width: 100%;
+  padding: 36px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  position: relative;
+  box-shadow: none;
+}
+.login-card .brand {
+  margin-bottom: 38px;
+}
+.login-card h1 {
+  font-size: 26px;
+  line-height: 1.4;
+  letter-spacing: -0.5px;
+  margin-bottom: 10px;
+}
+.login-card > p {
+  font-size: 14px;
+}
+.login-card form {
+  margin-top: 26px;
+}
+.login-card .login-appearance {
+  top: 24px;
+  right: 24px;
+}
+.login-card .brand small {
+  font-size: 12px;
+}
+.login-card > small {
+  font-size: 12px;
+}
+.login-card .primary {
+  border-radius: 5px;
+}
+@media (max-width: 840px) {
+  .console-app .sidebar .brand > div {
+    display: block;
+  }
+  .console-app .sidebar .brand {
+    justify-content: flex-start;
+  }
+  .console-app .resource-table {
+    min-width: 800px;
+  }
+  .login-page .login-card {
+    padding: 30px 24px;
+  }
+}
+
+.sidebar-close {
+  position: absolute;
+  top: 24px;
+  right: 12px;
+}
+@media (max-width: 840px) {
+  .console-app .sidebar .brand {
+    padding-right: 42px;
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 840px) {
+  .console-app .product-navigation button,
+  .console-app .sidebar-bottom > button {
+    justify-content: flex-start;
+  }
+  .console-app .compute-table {
+    min-width: 0;
+    table-layout: fixed;
+  }
+  .console-app .compute-table th:nth-child(2),
+  .console-app .compute-table td:nth-child(2),
+  .console-app .compute-table th:nth-child(4),
+  .console-app .compute-table td:nth-child(4),
+  .console-app .compute-table th:nth-child(5),
+  .console-app .compute-table td:nth-child(5) {
+    display: none;
+  }
+  .console-app .compute-table th:first-child {
+    width: 55%;
+  }
+  .console-app .compute-table th:nth-child(3) {
+    width: 24%;
+  }
+  .console-app .compute-table th:last-child {
+    width: 21%;
+  }
+  .console-app .compute-table td {
+    padding: 15px 10px;
+  }
+  .console-app .compute-table .resource-link {
+    font-size: 14px;
+    gap: 6px;
+  }
+  .console-app .compute-table .status {
+    font-size: 11px;
+  }
+  .console-app .compute-table .compact {
+    font-size: 11px !important;
+    padding: 5px !important;
+  }
+  .console-app .compute-table .compact svg {
+    display: none;
+  }
+}

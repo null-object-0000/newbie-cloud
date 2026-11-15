@@ -76,6 +76,65 @@ export class Cloud {
       );
     return json;
   }
+  async buckets(): Promise<
+    {
+      name: string;
+      region: string;
+      storageClass: string;
+      createdAt: string | null;
+      jurisdiction: string;
+    }[]
+  > {
+    if (this.provider !== 'cloudflare')
+      throw new HttpError(400, '当前仅支持 Cloudflare R2 存储桶清单');
+    if (!/^[a-f0-9]{32}$/.test(this.credentials.accountId ?? ''))
+      throw new HttpError(400, '请先为此账号配置 Cloudflare Account ID');
+    const items = new Map<string, any>();
+    // R2 jurisdiction is an explicit API partition; the default endpoint omits EU/US buckets.
+    for (const jurisdiction of ['default', 'eu', 'us']) {
+      let cursor = '';
+      const seen = new Set<string>();
+      for (let page = 0; page < 100; page++) {
+        const q = new URLSearchParams({ per_page: '1000' });
+        if (cursor) q.set('cursor', cursor);
+        const j = await this.request(
+          'https://api.cloudflare.com/client/v4/accounts/' +
+            this.credentials.accountId +
+            '/r2/buckets?' +
+            q,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: 'Bearer ' + this.credentials.apiToken,
+              'cf-r2-jurisdiction': jurisdiction,
+            },
+          },
+        );
+        if (!j.success)
+          this.error(
+            'R2 清单读取失败：请核对 R2 是否已启用，以及 Account → Workers R2 Storage → Read 权限',
+          );
+        if (!Array.isArray(j.result?.buckets)) this.error('R2 返回的存储桶清单格式无效');
+        for (const b of j.result.buckets) {
+          if (typeof b.name !== 'string') this.error('R2 返回的存储桶名称无效');
+          items.set(jurisdiction + ':' + b.name, {
+            name: b.name,
+            region: b.location ?? '',
+            storageClass: b.storage_class ?? '',
+            createdAt: b.creation_date ?? null,
+            jurisdiction: b.jurisdiction ?? jurisdiction,
+          });
+        }
+        const next = j.result_info?.cursor;
+        if (!next) break;
+        if (typeof next !== 'string' || seen.has(next) || page === 99)
+          this.error('R2 分页未完成，保留上次结果');
+        seen.add(next);
+        cursor = next;
+      }
+    }
+    return [...items.values()];
+  }
   async tc(
     service: 'dnspod' | 'teo' | 'domain' | 'cvm',
     action: string,

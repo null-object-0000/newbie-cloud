@@ -1,3 +1,4 @@
+import { Dialog as FocusDialog } from './dialog';
 import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
@@ -56,17 +57,9 @@ function Modal({
   title?: string;
 }) {
   return (
-    <div className="modal-backdrop">
-      <section className="modal wide" role="dialog" aria-modal="true" aria-label={title}>
-        <header>
-          <h2>{title}</h2>
-          <button className="icon-button" aria-label="关闭" onClick={onClose}>
-            <X size={20} />
-          </button>
-        </header>
-        <div className="modal-body">{children}</div>
-      </section>
-    </div>
+    <FocusDialog title={title} onClose={onClose} wide>
+      <div className="modal-body">{children}</div>
+    </FocusDialog>
   );
 }
 export function ExistingSite({
@@ -497,11 +490,13 @@ type Candidate = {
   linkedProjectId: string | null;
 };
 export function ImportSite({
+  initialResource,
   api,
   accounts,
   onClose,
   onImported,
 }: {
+  initialResource?: { accountId: string; externalId: string };
   api: Api;
   accounts: Account[];
   onClose: () => void;
@@ -532,7 +527,23 @@ export function ImportSite({
     }
   }
   useEffect(() => {
-    void run(async () => setItems((await api('/projects/import/candidates')).items));
+    void run(async () => {
+      const list: Candidate[] = (await api('/projects/import/candidates')).items;
+      setItems(list);
+      const i = list
+        .filter((c) => !c.linkedProjectId)
+        .findIndex(
+          (c) =>
+            c.accountId === initialResource?.accountId &&
+            c.externalId === initialResource?.externalId,
+        );
+      if (i >= 0) {
+        const c = list.filter((c) => !c.linkedProjectId)[i];
+        setSelected(String(i));
+        setName(c.name);
+        setDomain(c.domains[0] ?? '');
+      }
+    });
   }, []);
   const candidates = items.filter((i) => !i.linkedProjectId),
     chosen = candidates.find((_, i) => String(i) === selected);
@@ -654,7 +665,7 @@ export function ImportSite({
             </select>
           </label>
           {!candidates.length && (
-            <p>请先到「资源 → 站点与函数」读取云平台资源，或检查它是否已被接管。</p>
+            <p>请先到「计算 → 全部应用」读取云平台资源，或检查它是否已被接管。</p>
           )}
           <label>
             项目名称

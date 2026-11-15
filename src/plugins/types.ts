@@ -4,6 +4,7 @@ export type BuiltinPluginId =
   | 'aliyun'
   | 'domains'
   | 'dns'
+  | 'storage'
   | 'services'
   | 'email'
   | 'certificates'

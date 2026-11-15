@@ -159,6 +159,36 @@ export function createApp(fetcher: Fetch = fetch) {
     if (p.startsWith('/api/plugins')) return pluginApi(request, env, fetcher, body);
     const feature = routePlugin(p);
     if (feature) await requirePlugin(env, feature);
+    if (p === '/api/storage' || p.startsWith('/api/storage/')) await requirePlugin(env, 'storage');
+    if (p === '/api/storage' && method === 'GET') {
+      const rows = await env.DB.prepare(
+        "SELECT account_id,kind,data,updated_at FROM snapshots WHERE kind IN ('storage:buckets','issue:storage:buckets')",
+      ).all();
+      return json({ items: rows.results.map((r: any) => ({ ...r, data: JSON.parse(r.data) })) });
+    }
+    const storageMatch = p.match(/^\/api\/storage\/([^/]+)\/sync$/);
+    if (storageMatch && method === 'POST') {
+      const row = await account(env, decodeURIComponent(storageMatch[1]));
+      if (row.provider !== 'cloudflare') throw new HttpError(400, 'OSS / S3 适配器尚未接入');
+      await requirePlugin(env, row.provider);
+      try {
+        const items = await (await cloud(env, row, fetcher)).buckets();
+        if (new TextEncoder().encode(JSON.stringify(items)).length > 1500000)
+          throw new HttpError(502, '存储桶清单超过快照上限，保留上次结果');
+        await snapshot(env, row.id, 'storage:buckets', items);
+        await env.DB.prepare(
+          "DELETE FROM snapshots WHERE account_id=? AND kind='issue:storage:buckets'",
+        )
+          .bind(row.id)
+          .run();
+        return json({ count: items.length });
+      } catch (e) {
+        await snapshot(env, row.id, 'issue:storage:buckets', [
+          { message: e instanceof Error ? e.message : '读取失败', checkedAt: now() },
+        ]);
+        throw e;
+      }
+    }
     if (p === '/api/me')
       return json({
         authenticated: true,

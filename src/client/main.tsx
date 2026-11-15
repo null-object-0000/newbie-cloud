@@ -28,6 +28,9 @@ import {
   Package,
   Folder as FolderIcon,
   Layers3,
+  Menu,
+  Database,
+  Code2,
 } from 'lucide-react';
 import type { Account, Zone, DnsRecord, RecordInput, Provider, Operation, Plan } from '../shared';
 import './style.css';
@@ -41,16 +44,21 @@ import { Projects, type Project } from './projects';
 import {
   sectionFor,
   sectionLabels,
-  resourceGroups,
-  resourceGroup,
+  sectionViews as productViews,
+  viewLabels,
+  readRoute,
   type View,
   type Section,
 } from './navigation';
+import { DomainList, DomainSummary, ComputeIndex } from './console-views';
+import { Dialog as FocusDialog } from './dialog';
+import { Storage } from './storage';
 import './navigation.css';
 import { viewPlugins } from '../plugins/catalog';
 import type { PluginStatus } from '../plugins/types';
 import { domainInventory, dnsState, resourceRows } from '../inventory';
 import type { DnsObservation, ResourceSnapshot, LocalCapabilities } from '../shared';
+import './console.css';
 
 const providers: Record<Provider, { name: string; short: string; color: string }> = {
   cloudflare: { name: 'Cloudflare', short: 'CF', color: 'orange' },
@@ -150,60 +158,17 @@ function Modal({
   onClose: () => void;
   wide?: boolean;
 }) {
-  useEffect(() => {
-    const handle = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handle);
-    return () => window.removeEventListener('keydown', handle);
-  }, [onClose]);
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className={'modal ' + (wide ? 'wide' : '')}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header>
-          <h2>{title}</h2>
-          <button className="icon-button" onClick={onClose} aria-label="关闭">
-            <X size={20} />
-          </button>
-        </header>
-        {children}
-      </section>
-    </div>
+    <FocusDialog title={title} onClose={onClose} wide={wide}>
+      {children}
+    </FocusDialog>
   );
 }
 type Snapshot = ResourceSnapshot;
-const navigation: [View, string, typeof Cloud][] = [
-  ['projects', '我的项目', FolderIcon],
-  ['overview', '资源总览', LayoutDashboard],
-  ['accounts', '云账号', Cloud],
-  ['dns', '域名总览', Globe2],
-  ['records', 'DNS 记录', Search],
-  ['services', '站点与函数', Server],
-  ['email', '邮箱转发', Mail],
-  ['certificates', 'HTTPS 证书', ShieldCheck],
-  ['deploy', '已有工作流', CloudUpload],
-  ['servers', '服务器', Server],
-  ['containers', '本机容器', Server],
-  ['history', '操作记录', History],
-  ['plugins', '插件中心', Package],
-  ['extensions', '扩展资源', Package],
-  ['settings', '使用说明', Settings],
-];
 function App() {
-  const [sectionViews, setSectionViews] = useState<Record<Section, View>>({
-    projects: 'projects',
-    resources: 'overview',
-    activity: 'history',
-    settings: 'accounts',
-  });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [managedProjects, setManagedProjects] = useState<Project[]>([]),
-    [focusedProject, setFocusedProject] = useState('');
+    [focusedProject, setFocusedProject] = useState(readRoute().project);
   const [activePlugins, setActivePlugins] = useState<string[] | null>(null),
     [pluginStatuses, setPluginStatuses] = useState<PluginStatus[]>([]),
     [resourcePlugin, setResourcePlugin] = useState('');
@@ -211,7 +176,7 @@ function App() {
   const [auth, setAuth] = useState<boolean | null>(null),
     [configured, setConfigured] = useState(true),
     [token, setToken] = useState('');
-  const [view, setView] = useState<View>('projects'),
+  const [view, setView] = useState<View>(readRoute().view),
     [accounts, setAccounts] = useState<Account[]>([]),
     [zones, setZones] = useState<Zone[]>([]),
     [operations, setOperations] = useState<Operation[]>([]),
@@ -221,9 +186,9 @@ function App() {
     [busy, setBusy] = useState(false),
     [query, setQuery] = useState('');
   const [observations, setObservations] = useState<DnsObservation[]>([]);
-  const [dnsDetail, setDnsDetail] = useState(false),
-    [resourceDomain, setResourceDomain] = useState('');
-  const [zoneId, setZoneId] = useState(''),
+  const [dnsDetail, setDnsDetail] = useState(!!readRoute().zone),
+    [resourceDomain, setResourceDomain] = useState(readRoute().domain);
+  const [zoneId, setZoneId] = useState(readRoute().zone),
     [records, setRecords] = useState<DnsRecord[]>([]),
     [recordPage, setRecordPage] = useState(1),
     [nextPage, setNextPage] = useState<number | null>(null);
@@ -239,6 +204,56 @@ function App() {
     [branch, setBranch] = useState('main');
   const selectedZone = zones.find((z) => z.id === zoneId),
     selectedAccount = accounts.find((a) => a.id === selectedZone?.accountId);
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const old = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const close = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSidebarOpen(false);
+    };
+    const resize = () => {
+      if (innerWidth > 840) setSidebarOpen(false);
+    };
+    window.addEventListener('keydown', close);
+    window.addEventListener('resize', resize);
+    document.querySelector<HTMLElement>('.product-navigation button')?.focus();
+    return () => {
+      document.body.style.overflow = old;
+      window.removeEventListener('keydown', close);
+      window.removeEventListener('resize', resize);
+    };
+  }, [sidebarOpen]);
+  useEffect(() => {
+    const restore = () => {
+      const r = readRoute();
+      setView(r.view);
+      setResourceDomain(r.domain);
+      setFocusedProject(r.project);
+      setZoneId(r.zone);
+      setDnsDetail(!!r.zone);
+      setSidebarOpen(false);
+    };
+    window.addEventListener('popstate', restore);
+    window.addEventListener('hashchange', restore);
+    return () => {
+      window.removeEventListener('popstate', restore);
+      window.removeEventListener('hashchange', restore);
+    };
+  }, []);
+  useEffect(() => {
+    const q = new URLSearchParams();
+    if (resourceDomain) q.set('domain', resourceDomain);
+    if (focusedProject && ['compute', 'workers', 'projects', 'services'].includes(view))
+      q.set('project', focusedProject);
+    if (dnsDetail && zoneId && view === 'records') q.set('zone', zoneId);
+    const hash = '#/' + sectionFor(view) + '/' + view + (q.size ? '?' + q : '');
+    if (location.hash !== hash) history.pushState(null, '', hash);
+  }, [view, resourceDomain, focusedProject, dnsDetail, zoneId]);
+  useEffect(() => {
+    if (!notice || busy) return;
+    const timer = setTimeout(() => setNotice(''), 8000);
+    return () => clearTimeout(timer);
+  }, [notice, busy]);
   async function refresh() {
     const [a, z, o, s, dns, me, plugins, projectList] = await Promise.all([
       api('/accounts'),
@@ -298,7 +313,7 @@ function App() {
     if (!auth || !zoneId) return;
     setError('');
     setRecords([]);
-    if (view === 'dns' && dnsDetail) void run(loadRecords);
+    if (view === 'records' && dnsDetail) void run(loadRecords);
   }, [auth, view, zoneId, recordPage, dnsDetail]);
   async function sync(id: string) {
     let cursor: number | null = 1,
@@ -334,29 +349,27 @@ function App() {
       return;
     }
     setView(v);
-    setSectionViews((previous) => ({ ...previous, [sectionFor(v)]: v }));
+    setSidebarOpen(false);
+    setFocusedProject('');
     setDnsDetail(false);
-    setResourceDomain('');
+    if (sectionFor(v) !== 'domains') setResourceDomain('');
     setQuery('');
     setError('');
     setNotice('');
   };
-  const section = sectionFor(view),
-    currentGroup = resourceGroup(view);
+  const section = sectionFor(view);
   const enabledView = (v: View) =>
     (v !== 'plugin-resource' ||
       pluginStatuses.some((p) => p.manifest.id === resourcePlugin && p.enabled && p.available)) &&
     (v !== 'containers' || !!localCapabilities) &&
     (!viewPlugins[v] || !activePlugins || activePlugins.includes(viewPlugins[v]));
-  const chooseSection = (s: Section) => {
-    let target = sectionViews[s];
-    if (!enabledView(target))
-      target = s === 'resources' ? 'overview' : s === 'projects' ? 'projects' : 'accounts';
-    nav(target);
-  };
   const openManagedProject = (id: string) => {
-    setFocusedProject(id);
     nav('projects');
+    setFocusedProject(id);
+  };
+  const openDomain = (name: string) => {
+    nav('domain-overview');
+    setResourceDomain(name);
   };
   const certificates = resourceRows(snapshots, 'certificates');
   const domains = domainInventory(zones, snapshots);
@@ -370,7 +383,8 @@ function App() {
       return;
     }
     chooseZone(id);
-    setView('dns');
+    setView('records');
+    setResourceDomain(zones.find((z) => z.id === id)?.name ?? '');
     setDnsDetail(true);
     setError('');
     setNotice('');
@@ -438,12 +452,8 @@ function App() {
             <AppearancePicker />
           </div>
           <Brand />
-          <div className="eyebrow">YOUR CLOUD, YOUR CONTROL</div>
-          <h1>
-            把云上的小事，
-            <br />
-            放到一个地方。
-          </h1>
+
+          <h1>登录控制台</h1>
           <p>个人使用 · 免费优先 · 数据留在自己的账号</p>
           {!configured ? (
             <div className="callout">
@@ -485,56 +495,82 @@ function App() {
           {error && <div className="error">{error}</div>}
           <small>单用户自托管。云平台密钥仅由后端加密保存。</small>
         </div>
-        <div className="login-art">
-          <div className="orbit o1" />
-          <div className="orbit o2" />
-          <div className="orbit o3" />
-          <div className="cloud-center">
-            <Cloud size={76} />
-          </div>
-          <span className="floating f1">Cloudflare</span>
-          <span className="floating f2">腾讯云</span>
-          <span className="floating f3">阿里云</span>
-          <div className="art-note">
-            一朵云的自由，
-            <br />
-            不止一种选择。
-          </div>
-        </div>
       </main>
     );
   return (
-    <div className="app">
-      <aside className="sidebar">
+    <div className="app console-app">
+      {sidebarOpen && (
+        <button
+          className="sidebar-overlay"
+          aria-label="关闭导航"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      <aside className={'sidebar ' + (sidebarOpen ? 'is-open' : '')}>
         <Brand />
-        <span className="workspace-label">PERSONAL WORKSPACE</span>
-        <nav aria-label="主导航">
+        <button
+          className="mobile-menu sidebar-close icon-button"
+          aria-label="关闭导航"
+          onClick={() => setSidebarOpen(false)}
+        >
+          <X size={20} />
+        </button>
+        <nav className="product-navigation" aria-label="主导航">
+          <button className={view === 'overview' ? 'active' : ''} onClick={() => nav('overview')}>
+            <LayoutDashboard size={18} />
+            账户概览
+          </button>
           {(
             [
-              ['projects', FolderIcon],
-              ['resources', Layers3],
-              ['activity', History],
-              ['settings', Settings],
-            ] as [Section, typeof Cloud][]
-          ).map(([id, Icon]) => (
-            <button
-              key={id}
-              aria-label={sectionLabels[id]}
-              aria-current={section === id ? 'page' : undefined}
-              title={sectionLabels[id]}
-              className={section === id ? 'active' : ''}
-              onClick={() => chooseSection(id)}
-            >
-              <Icon size={19} />
-              {sectionLabels[id]}
-            </button>
+              ['domains', Globe2, 'dns'],
+              ['compute', Code2, 'compute'],
+              ['storage', Database, 'storage'],
+              ['settings', Settings, 'accounts'],
+            ] as [Section, typeof Cloud, View][]
+          ).map(([id, Icon, target]) => (
+            <div className={'product-group ' + (section === id ? 'selected' : '')} key={id}>
+              <button
+                className="product-title"
+                aria-expanded={section === id}
+                onClick={() => nav(target)}
+              >
+                <Icon size={18} />
+                {sectionLabels[id]}
+                <ChevronRight size={14} />
+              </button>
+              {section === id && (
+                <div className="product-children">
+                  {id === 'domains' && resourceDomain && (
+                    <button
+                      className={view === 'domain-overview' ? 'active' : ''}
+                      onClick={() => nav('domain-overview')}
+                    >
+                      域名概述
+                    </button>
+                  )}
+                  {id === 'compute' && (
+                    <button
+                      className={view === 'compute' || view === 'services' ? 'active' : ''}
+                      onClick={() => nav('compute')}
+                    >
+                      全部应用
+                    </button>
+                  )}
+                  {productViews[id].filter(enabledView).map((v) => (
+                    <button
+                      key={v}
+                      className={view === v ? 'active' : ''}
+                      aria-current={view === v ? 'page' : undefined}
+                      onClick={() => nav(v)}
+                    >
+                      {viewLabels[v]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </nav>
-        <p className="section-hint">
-          发布与维护项目，
-          <br />
-          按需查看底层资源。
-        </p>
         <div className="sidebar-bottom">
           <div className="free-note">
             <span className="green-dot" />
@@ -556,15 +592,23 @@ function App() {
           </button>
         </div>
       </aside>
-      <div className="main-shell">
+      <div className="main-shell" inert={sidebarOpen || undefined}>
         <header className="topbar">
+          <button
+            className="icon-button mobile-menu"
+            aria-label="打开导航"
+            aria-expanded={sidebarOpen}
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+          >
+            <Menu size={20} />
+          </button>
           <div>
             <span className="breadcrumb">{sectionLabels[section]}</span>
             <ChevronRight size={14} />
             <strong>
               {view === 'plugin-resource'
                 ? pluginStatuses.find((p) => p.manifest.id === resourcePlugin)?.manifest.name
-                : (navigation.find((n) => n[0] === view)?.[1] ?? '使用说明')}
+                : viewLabels[view]}
             </strong>
           </div>
           <div className="topbar-actions">
@@ -591,70 +635,56 @@ function App() {
               </button>
             </div>
           )}
-          {section !== 'activity' && (
-            <nav className="section-navigation" aria-label="分区导航">
-              {(section === 'resources'
-                ? resourceGroups
-                    .filter((g) => g.views.some(enabledView))
-                    .map((g) => ({
-                      id: g.id,
-                      label: g.label,
-                      selected: currentGroup?.id === g.id,
-                      target: g.views.find(enabledView)!,
-                    }))
-                : section === 'projects'
-                  ? (['projects', 'deploy'] as View[]).filter(enabledView).map((v) => ({
-                      id: v,
-                      label: v === 'projects' ? '网站项目' : '已有工作流',
-                      selected: view === v,
-                      target: v,
-                    }))
-                  : section === 'settings'
-                    ? (['accounts', 'plugins', 'settings'] as View[]).map((v) => ({
-                        id: v,
-                        label: navigation.find((n) => n[0] === v)![1],
-                        selected: view === v,
-                        target: v,
-                      }))
-                    : []
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  aria-current={tab.selected ? 'page' : undefined}
-                  onClick={() => nav(tab.target)}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
-          )}
-          {section === 'resources' && ['domains', 'compute'].includes(currentGroup?.id ?? '') && (
-            <nav className="resource-subnavigation" aria-label="资源分类">
-              {currentGroup!.views.filter(enabledView).map((v) => (
-                <button
-                  key={v}
-                  aria-current={view === v ? 'page' : undefined}
-                  onClick={() => nav(v)}
-                >
-                  {navigation.find((n) => n[0] === v)![1]}
-                </button>
-              ))}
-            </nav>
+          {section === 'domains' && view !== 'dns' && (
+            <div className="domain-scope">
+              <button
+                className="text-button"
+                onClick={() => {
+                  nav('dns');
+                  setResourceDomain('');
+                }}
+              >
+                所有域名
+              </button>
+              <ChevronRight size={14} />
+              <select
+                aria-label="当前域名"
+                value={resourceDomain}
+                onChange={(e) => {
+                  setResourceDomain(e.target.value);
+                  setDnsDetail(false);
+                  if (view === 'domain-overview' && !e.target.value) setView('dns');
+                }}
+              >
+                <option value="">全部域名</option>
+                {domains.map((d) => (
+                  <option key={d.name} value={d.name}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
           <div className="page-heading">
             <div>
-              <div className="eyebrow">NEWBIE CLOUD / {sectionLabels[section]}</div>
               <h1>
-                {view === 'overview'
-                  ? '资源总览'
-                  : view === 'plugin-resource'
-                    ? pluginStatuses.find((p) => p.manifest.id === resourcePlugin)?.manifest.name
-                    : (navigation.find((n) => n[0] === view)?.[1] ?? '使用说明')}
+                {view === 'domain-overview'
+                  ? resourceDomain
+                  : view === 'overview'
+                    ? '账户概览'
+                    : view === 'plugin-resource'
+                      ? pluginStatuses.find((p) => p.manifest.id === resourcePlugin)?.manifest.name
+                      : viewLabels[view]}
               </h1>
               <p>
                 {
                   {
-                    projects: '统一查看网站的源码、部署、域名与资源；从这里新建或接管站点。',
+                    projects: '静态站点、源码、部署记录和自定义域名。',
+                    compute: '统一查看所有账号的 Workers 和 Pages，接管已有站点或发布新网站。',
+                    workers: '按账号查看边缘函数及其域名绑定。',
+                    registrations: '查看注册商、到期时间与自动续费状态。',
+                    'domain-overview': '注册、DNS、邮件和证书，围绕同一个域名查看。',
+                    storage: '读取对象存储桶及其来源，不会开通付费服务。',
                     overview: '汇总所有已连接账号的资产，保留注册商、DNS 和托管平台各自的来源。',
                     accounts: '连接自己的云账号，按实际权限管理资源。',
                     dns: '按域名统一查看注册、DNS 和关联资源；同名域名自动归并。',
@@ -676,9 +706,7 @@ function App() {
             </div>
             <div className="heading-actions">
               {busy && <LoaderCircle size={19} className="spin" />}
-              {!['projects', 'extensions', 'plugin-resource', 'plugins', 'settings'].includes(
-                view,
-              ) && (
+              {['overview', 'accounts', 'history', 'deploy'].includes(view) && (
                 <button className="secondary" disabled={busy} onClick={() => void run(refresh)}>
                   <RefreshCw size={16} />
                   刷新
@@ -692,10 +720,25 @@ function App() {
               )}
             </div>
           </div>
-          {view === 'projects' && (
+          {['compute', 'workers', 'projects', 'services'].includes(view) && (
             <Projects
+              key={view}
+              renderIndex={(actions) => (
+                <ComputeIndex
+                  {...actions}
+                  accounts={accounts}
+                  snapshots={snapshots}
+                  busy={busy || actions.busy}
+                  onSync={() => void run(() => syncAllResources('services'))}
+                  onAccounts={() => nav('accounts')}
+                  kind={view === 'workers' ? 'Worker' : view === 'projects' ? 'Pages' : 'all'}
+                  domain={resourceDomain}
+                  onClearDomain={() => setResourceDomain('')}
+                />
+              )}
               api={api}
               accounts={accounts}
+              initialProjects={managedProjects}
               initialProjectId={focusedProject}
               onProjectChange={setFocusedProject}
               onProjectsChange={setManagedProjects}
@@ -878,23 +921,39 @@ function App() {
               </button>
             </div>
           )}
-          {view === 'dns' && !dnsDetail && (
-            <DomainExplorer
+          {(view === 'dns' || (view === 'registrations' && !resourceDomain)) && (
+            <DomainList
               accounts={accounts}
               zones={zones}
               snapshots={snapshots}
               observations={observations}
               busy={busy}
-              onOpenZone={openZone}
               onSync={() => void run(syncAllDomains)}
-              onResources={openResources}
+              onOpen={openDomain}
+              onAccounts={() => setAccountModal(null)}
+              registrationOnly={view === 'registrations'}
             />
           )}
-          {view === 'dns' && dnsDetail && (
+          {(view === 'domain-overview' || (view === 'registrations' && !!resourceDomain)) && (
+            <DomainSummary
+              name={resourceDomain}
+              accounts={accounts}
+              zones={zones}
+              snapshots={snapshots}
+              observations={observations}
+              onDns={openZone}
+              onNavigate={openResources}
+              registrationOnly={view === 'registrations'}
+            />
+          )}
+          {view === 'storage' && (
+            <Storage api={api} accounts={accounts} onAccounts={() => nav('accounts')} />
+          )}
+          {view === 'records' && dnsDetail && (
             <>
               <div className="domain-detail-heading">
                 <button className="secondary" onClick={() => setDnsDetail(false)}>
-                  返回全部域名
+                  返回记录列表
                 </button>
                 <p>
                   {selectedZone?.name} ·{' '}
@@ -910,11 +969,13 @@ function App() {
                   DNS 配置来源
                   <select value={zoneId} onChange={(e) => chooseZone(e.target.value)}>
                     <option value="">请选择已同步域名</option>
-                    {zones.map((z) => (
-                      <option key={z.id} value={z.id}>
-                        {z.name} · {accounts.find((a) => a.id === z.accountId)?.name}
-                      </option>
-                    ))}
+                    {zones
+                      .filter((z) => !resourceDomain || z.name === resourceDomain)
+                      .map((z) => (
+                        <option key={z.id} value={z.id}>
+                          {z.name} · {accounts.find((a) => a.id === z.accountId)?.name}
+                        </option>
+                      ))}
                   </select>
                 </label>
                 {selectedAccount && (
@@ -925,7 +986,7 @@ function App() {
                     </span>
                   </>
                 )}
-                {view === 'dns' && (
+                {view === 'records' && (
                   <>
                     <div className="search">
                       <Search size={16} />
@@ -1067,7 +1128,7 @@ function App() {
               )}
             </>
           )}
-          {(['services', 'certificates', 'email', 'records'] as string[]).includes(view) && (
+          {(['certificates', 'email', 'records'] as string[]).includes(view) && !dnsDetail && (
             <ResourceExplorer
               key={view}
               accounts={accounts}
@@ -1080,6 +1141,7 @@ function App() {
               onOpenZone={openZone}
               category={view as 'services' | 'certificates' | 'email' | 'records'}
               onSync={() => void run(() => syncAllResources(view as Category))}
+              hideDomainFilter
               domainFilter={resourceDomain}
               setDomainFilter={setResourceDomain}
             />
