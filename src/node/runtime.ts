@@ -180,9 +180,16 @@ export function createNodeRuntime(options: {
       }
       const chunks: Buffer[] = [];
       let size = 0;
+      const bodyLimit = /^\/api\/projects\/[a-f0-9-]{36}\/releases\/[a-f0-9-]{36}\/file$/.test(
+        url.pathname,
+      )
+        ? 1048576
+        : url.pathname.startsWith('/api/projects')
+          ? 128000
+          : 16384;
       for await (const chunk of incoming) {
         size += chunk.length;
-        if (size > 16384) {
+        if (size > bodyLimit) {
           outgoing.writeHead(413, {
             'Content-Type': 'application/json',
             'Cache-Control': 'no-store',

@@ -22,6 +22,7 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build:node
+      - run: npm run build:agent
   docker:
     needs: check
     runs-on: ubuntu-latest

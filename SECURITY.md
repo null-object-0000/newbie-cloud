@@ -16,6 +16,10 @@ Newbie Cloud is a single-user, self-hosted control plane. It stores encrypted cl
 
 This initial MVP is not an audited security product. Keep tokens scoped to the resources and capabilities you actually use, and run only within your own account.
 
+Static publishing creates a new, randomly named Cloudflare Pages project and never modifies pre-existing sites or DNS. It accepts validated static build output, verifies file hashes, and does not create Functions or paid resources. File filters cannot detect secrets intentionally embedded in otherwise valid JavaScript/JSON. Publish only content intended to be public.
+
+Project Agent tokens are random, hashed at rest, expiring and revocable. They only access their assigned project, cannot expose cloud credentials, and require separate rollback permission. Revocation blocks new requests, not a cloud operation already accepted. Production writes are claimed before submission; uncertain results are reconciled without automatic replays. Cloud-side operations and local DB updates cannot form a distributed atomic transaction.
+
 Third-party plugins use a dedicated resource protocol. Previewing reads manifests and pins sources without executing package scripts. Declarative plugins use declared public HTTPS hosts and independent encrypted configuration; they do not receive existing cloud-account credentials. Resource responses are transient and excluded from PWA caching.
 
 JavaScript plugins require `ALLOW_CODE_PLUGINS=true` on Node/Docker plus explicit installation consent. A fresh child process, minimal environment, filesystem permissions and time/output limits reduce accidents; they are **not a sandbox for malicious code**. Trusted code can still exercise the runtime user's network/system capabilities, including reachable Docker sockets. Never enable this option for untrusted code. See [plugin documentation](docs/plugins.md).

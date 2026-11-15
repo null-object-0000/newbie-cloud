@@ -70,7 +70,7 @@ test('SQLite adapter persists data, applies migrations once and rolls back faile
     );
     assert.equal(
       (await db.prepare('SELECT count(*) AS n FROM _migrations').first<{ n: number }>())?.n,
-      1,
+      fs.readdirSync('migrations').filter((name) => /^\d+_[a-z0-9_-]+\.sql$/.test(name)).length,
     );
   } finally {
     db.close();

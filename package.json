@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:agent": "esbuild src/agent/cli.ts src/agent/mcp.ts --bundle --platform=node --target=node24 --format=esm --outdir=agent --out-extension:.js=.mjs --packages=external",
     "dev": "vite --host 127.0.0.1",
     "dev:api": "wrangler dev --port 8787",
     "build": "tsc --noEmit && vite build",
@@ -19,6 +20,8 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@noble/hashes": "2.4.0",
     "lucide-react": "0.468.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
@@ -29,13 +32,13 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
+    "esbuild": "0.28.2",
     "miniflare": "5.20261113.0-beta",
     "playwright": "1.65.1",
     "prettier": "3.10.1",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
     "vite": "8.3.8",
-    "wrangler": "4.162.0",
-    "esbuild": "0.28.2"
+    "wrangler": "4.162.0"
   }
 }

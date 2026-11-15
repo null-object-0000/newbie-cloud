@@ -4,6 +4,122 @@ import fs from 'node:fs';
 import { buildSync } from 'esbuild';
 import { Miniflare, convertV4MiniflareOptions, Response as RuntimeResponse } from 'miniflare';
 import { demoManifest, npmArchive } from './plugin-fixtures';
+import { pagesFixture } from './pages-fixture';
+import { describe } from '../src/projects/files';
+
+test('native Worker creates a static project, uploads assets, verifies production and keeps Agent scope', async () => {
+  const source = buildSync({
+      entryPoints: ['src/server/index.ts'],
+      bundle: true,
+      format: 'esm',
+      platform: 'browser',
+      target: 'es2022',
+      write: false,
+    }).outputFiles[0].text,
+    fixture = pagesFixture(),
+    token = 'runtime-project-management-token-123456789';
+  const mf = new Miniflare(
+    convertV4MiniflareOptions({
+      modules: true,
+      script: source,
+      compatibilityDate: '2026-11-15',
+      d1Databases: { DB: 'project-runtime' },
+      bindings: { ADMIN_TOKEN: token, ENCRYPTION_KEY: Buffer.alloc(32, 9).toString('base64') },
+      outboundService: async (request) => {
+        let body: any;
+        if (request.method !== 'GET' && request.method !== 'HEAD')
+          body = request.headers.get('Content-Type')?.includes('multipart/form-data')
+            ? await request.formData()
+            : await request.text();
+        const result = await fixture.fetcher(request.url, {
+          method: request.method,
+          headers: new Headers(Object.fromEntries(request.headers)),
+          body,
+        });
+        return new RuntimeResponse(await result.arrayBuffer(), {
+          status: result.status,
+          headers: Object.fromEntries(result.headers),
+        });
+      },
+    }),
+  );
+  try {
+    const db = await mf.getD1Database('DB');
+    for (const filename of fs
+      .readdirSync('migrations')
+      .filter((f) => f.endsWith('.sql'))
+      .sort())
+      await db.exec(fs.readFileSync('migrations/' + filename, 'utf8').replaceAll('\n', ' '));
+    async function api(route: string, method = 'GET', body?: unknown, auth = token, raw = false) {
+      const r = await mf.dispatchFetch('https://app.example/api' + route, {
+        method,
+        headers: {
+          Authorization: 'Bearer ' + auth,
+          'Content-Type': raw ? 'application/octet-stream' : 'application/json',
+        },
+        ...(body !== undefined ? { body: raw ? (body as any) : JSON.stringify(body) } : {}),
+      });
+      const b: any = await r.json();
+      assert.ok(r.ok, JSON.stringify(b));
+      return b;
+    }
+    const a = await api('/accounts', 'POST', {
+        name: 'Worker publishing',
+        provider: 'cloudflare',
+        readonly: false,
+        credentials: { apiToken: 'fixture', accountId: 'a'.repeat(32) },
+      }),
+      p = await api('/projects', 'POST', {
+        name: 'Worker website',
+        accountId: a.account.id,
+        requestKey: crypto.randomUUID(),
+      }),
+      pid = p.project.id;
+    assert.equal(
+      (await api('/projects/' + pid + '/provision', 'POST', {})).project.status,
+      'ready',
+    );
+    const html = new TextEncoder().encode('<h1>Native Worker static publish</h1>'),
+      js = new Uint8Array(32768).fill(32),
+      assets = [await describe(html, 'index.html'), await describe(js, 'app.js')];
+    const r = await api('/projects/' + pid + '/releases', 'POST', {
+      requestKey: crypto.randomUUID(),
+      files: assets,
+    });
+    for (const [i, bytes] of [html, js].entries())
+      await api(
+        `/projects/${pid}/releases/${r.release.id}/file?path=${assets[i].path}`,
+        'PUT',
+        bytes,
+        token,
+        true,
+      );
+    await api(`/projects/${pid}/releases/${r.release.id}/publish`, 'POST', {});
+    const checked = await api(`/projects/${pid}/releases/${r.release.id}/check`, 'POST', {});
+    assert.equal(checked.project.current_release, r.release.id);
+    assert.equal(checked.releases[0].verification, 'passed');
+    const issued = await api('/projects/' + pid + '/tokens', 'POST', { name: 'Worker Agent' });
+    assert.equal((await api('/projects', 'GET', undefined, issued.token)).items.length, 1);
+    const denied = await mf.dispatchFetch('https://app.example/api/accounts', {
+      headers: { Authorization: 'Bearer ' + issued.token },
+    });
+    assert.equal(denied.status, 401);
+    const many = [
+      assets[0],
+      ...Array.from({ length: 199 }, (_, i) => ({ ...assets[1], path: 'asset-' + i + '.js' })),
+    ];
+    assert.ok(
+      (
+        await api('/projects/' + pid + '/releases', 'POST', {
+          requestKey: crypto.randomUUID(),
+          files: many,
+        })
+      ).release.id,
+    );
+  } finally {
+    await mf.dispose();
+  }
+});
 
 test('native Worker installs an integrity-checked npm archive and reads declarative resources', async () => {
   const source = buildSync({

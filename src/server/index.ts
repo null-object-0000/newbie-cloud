@@ -6,6 +6,7 @@ import { Cloud, validateCredentials } from './providers';
 import { canonical, protectedRecord, recordInput } from './validation';
 import { HttpError, now, type AccountRow, type Env, type Fetch, type ZoneRow } from './types';
 import { requirePlugin, enabledBuiltins, routePlugin, pluginApi } from '../plugins/runtime';
+import { projectsApi } from '../projects/api';
 
 const json = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), {
@@ -151,6 +152,8 @@ export function createApp(fetcher: Fetch = fetch) {
       response.headers.set('Set-Cookie', cookie(await session(env.ADMIN_TOKEN), request));
       return response;
     }
+    if (p === '/api/projects' || p.startsWith('/api/projects/'))
+      return projectsApi(request, env, fetcher);
     if (!(await authenticated(request, env.ADMIN_TOKEN))) throw new HttpError(401, '请先登录');
     if (!['GET', 'HEAD'].includes(method)) sameOrigin(request);
     if (p.startsWith('/api/plugins')) return pluginApi(request, env, fetcher, body);

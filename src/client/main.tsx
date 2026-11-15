@@ -26,6 +26,7 @@ import {
   ExternalLink,
   LoaderCircle,
   Package,
+  Folder as FolderIcon,
 } from 'lucide-react';
 import type { Account, Zone, DnsRecord, RecordInput, Provider, Operation, Plan } from '../shared';
 import './style.css';
@@ -35,6 +36,7 @@ import { PwaInstall, PwaProvider } from './pwa';
 import { DomainExplorer, ResourceExplorer, syncResources, type Category } from './resources';
 import { CloudServers, Containers } from './servers';
 import { PluginCenter, PluginResources } from './plugins';
+import { Projects } from './projects';
 import { viewPlugins } from '../plugins/catalog';
 import type { PluginStatus } from '../plugins/types';
 import { domainInventory, dnsState, resourceRows } from '../inventory';
@@ -167,6 +169,7 @@ function Modal({
 }
 type Snapshot = ResourceSnapshot;
 type View =
+  | 'projects'
   | 'overview'
   | 'accounts'
   | 'dns'
@@ -182,6 +185,7 @@ type View =
   | 'history'
   | 'settings';
 const navigation: [View, string, typeof Cloud][] = [
+  ['projects', '我的项目', FolderIcon],
   ['overview', '总览', LayoutDashboard],
   ['accounts', '云账号', Cloud],
   ['dns', '域名与 DNS', Globe2],
@@ -203,7 +207,7 @@ function App() {
   const [auth, setAuth] = useState<boolean | null>(null),
     [configured, setConfigured] = useState(true),
     [token, setToken] = useState('');
-  const [view, setView] = useState<View>('overview'),
+  const [view, setView] = useState<View>('projects'),
     [accounts, setAccounts] = useState<Account[]>([]),
     [zones, setZones] = useState<Zone[]>([]),
     [operations, setOperations] = useState<Operation[]>([]),
@@ -587,6 +591,7 @@ function App() {
               <p>
                 {
                   {
+                    projects: '让做好的网页上线。一个账号，免费发布，持续更新。',
                     overview: '域名、解析和托管服务，在一个地方看清。',
                     accounts: '连接自己的云账号，按实际权限管理资源。',
                     dns: '按域名统一查看注册、DNS 和关联资源；同名域名自动归并。',
@@ -619,6 +624,14 @@ function App() {
               )}
             </div>
           </div>
+          {view === 'projects' && (
+            <Projects
+              api={api}
+              accounts={accounts}
+              onConnect={() => setAccountModal(null)}
+              onAccounts={() => nav('accounts')}
+            />
+          )}
           {view === 'overview' && (
             <>
               <section className="stats">
@@ -1156,6 +1169,7 @@ function App() {
       </div>
       {accountModal !== undefined && (
         <AccountEditor
+          publishing={view === 'projects' && !accountModal}
           existing={accountModal}
           busy={busy}
           onClose={() => setAccountModal(undefined)}
@@ -1165,7 +1179,11 @@ function App() {
               else await api('/accounts', 'POST', data);
               setAccountModal(undefined);
               await refresh();
-              setNotice('云账号已保存。可手动同步域名或读取服务。');
+              setNotice(
+                view === 'projects'
+                  ? '发布账号已保存。现在可以创建网页项目。'
+                  : '云账号已保存。可手动同步域名或读取服务。',
+              );
             })
           }
         />
@@ -1307,11 +1325,13 @@ function OperationList({
   );
 }
 function AccountEditor({
+  publishing = false,
   existing,
   busy,
   onClose,
   onSave,
 }: {
+  publishing?: boolean;
   existing: Account | null;
   busy: boolean;
   onClose: () => void;
@@ -1319,7 +1339,7 @@ function AccountEditor({
 }) {
   const [provider, setProvider] = useState<Provider>(existing?.provider ?? 'cloudflare'),
     [name, setName] = useState(existing?.name ?? ''),
-    [readonly, setReadonly] = useState(existing?.readonly ?? true),
+    [readonly, setReadonly] = useState(existing?.readonly ?? !publishing),
     [credentials, setCredentials] = useState<Record<string, string>>({});
   const fields: Record<Provider, [string, string, string][]> = {
     cloudflare: [
@@ -1362,11 +1382,13 @@ function AccountEditor({
               setCredentials({});
             }}
           >
-            {Object.entries(providers).map(([id, p]) => (
-              <option value={id} key={id}>
-                {p.name}
-              </option>
-            ))}
+            {Object.entries(providers)
+              .filter(([id]) => !publishing || id === 'cloudflare')
+              .map(([id, p]) => (
+                <option value={id} key={id}>
+                  {p.name}
+                </option>
+              ))}
           </select>
         </label>
         <label>
@@ -1389,7 +1411,11 @@ function AccountEditor({
               value={credentials[key] ?? ''}
               onChange={(e) => setCredentials((c) => ({ ...c, [key]: e.target.value }))}
               placeholder={existing ? '留空保留已保存的值' : key === 'workspaceId' ? 'zone-…' : ''}
-              required={!existing && !['accountId', 'workspaceId', 'esaRegion'].includes(key)}
+              required={
+                !existing &&
+                (!['accountId', 'workspaceId', 'esaRegion'].includes(key) ||
+                  (publishing && key === 'accountId'))
+              }
             />
           </label>
         ))}
@@ -1399,7 +1425,9 @@ function AccountEditor({
             checked={readonly}
             onChange={(e) => setReadonly(e.target.checked)}
           />
-          只读连接（建议首次接入保持开启）
+          {publishing
+            ? '只读连接（发布网页需要关闭；Token 只需 Pages Edit）'
+            : '只读连接（建议首次接入保持开启）'}
         </label>
         <small className="muted">
           保存账号不会自动修改任何云资源。后端加密保存凭据，页面无法读取已保存的明文。
