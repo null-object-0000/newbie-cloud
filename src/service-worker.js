@@ -63,9 +63,7 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   if (request.mode === 'navigate') {
     event.respondWith(
-      caches
-        .open(CACHE)
-        .then(async (cache) => (await cache.match('/')) ?? fetch(request)),
+      caches.open(CACHE).then(async (cache) => (await cache.match('/')) ?? fetch(request)),
     );
   } else if (STATIC_PATHS.has(url.pathname)) {
     event.respondWith(

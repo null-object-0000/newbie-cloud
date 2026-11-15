@@ -73,7 +73,16 @@ test('service worker never caches API reads/writes or queues failures, and only 
       },
       open: async () => {
         cacheReads++;
-        return { match: async () => new Response('static shell') };
+        return {
+          match: async (key: string) => {
+            assert.equal(
+              key,
+              '/',
+              'offline navigation must use the canonical root, not redirected /index.html',
+            );
+            return new Response('static shell');
+          },
+        };
       },
     },
   });
