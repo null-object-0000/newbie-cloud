@@ -39,6 +39,7 @@ import type {
   EmailRule,
 } from '../shared';
 import './style.css';
+import { AppearancePicker } from './appearance';
 
 const providers: Record<Provider, { name: string; short: string; color: string }> = {
   cloudflare: { name: 'Cloudflare', short: 'CF', color: 'orange' },
@@ -332,6 +333,9 @@ function App() {
     return (
       <main className="login-page">
         <div className="login-card">
+          <div className="login-appearance">
+            <AppearancePicker />
+          </div>
           <Brand />
           <div className="eyebrow">YOUR CLOUD, YOUR CONTROL</div>
           <h1>
@@ -445,9 +449,12 @@ function App() {
             <ChevronRight size={14} />
             <strong>{navigation.find((n) => n[0] === view)?.[1] ?? '使用说明'}</strong>
           </div>
-          <span className="owner">
-            <span>N</span>个人空间
-          </span>
+          <div className="topbar-actions">
+            <AppearancePicker />
+            <span className="owner">
+              <span>N</span>个人空间
+            </span>
+          </div>
         </header>
         <main className="content">
           {(error || notice) && (
