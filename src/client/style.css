@@ -1166,7 +1166,7 @@ td small {
 .login-page {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   background: var(--surface);
 }
 .login-card {
@@ -1442,7 +1442,7 @@ td small {
     width: 100%;
   }
   .login-page {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .login-art {
     display: none;
