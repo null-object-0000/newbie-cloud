@@ -1,4 +1,6 @@
-import type { Account, Credentials, Operation, Plan, Provider } from '../shared';
+import type { Account, Credentials, Operation, Plan, Provider, DnsObservation } from '../shared';
+import { domainName, freshDns } from '../inventory';
+import { observeDns, saveInventoryPage } from './inventory';
 import { authenticated, decrypt, encrypt, matches, sameOrigin, session, sha256 } from './crypto';
 import { Cloud, validateCredentials } from './providers';
 import { canonical, protectedRecord, recordInput } from './validation';
@@ -83,6 +85,14 @@ async function cloud(env: Env, row: AccountRow, fetcher: Fetch) {
     fetcher,
   );
 }
+async function assertDnsSource(env: Env, row: AccountRow, z: ZoneRow) {
+  const observed = await env.DB.prepare('SELECT value FROM settings WHERE key=?')
+    .bind('dns:' + domainName(z.name))
+    .first<{ value: string }>();
+  const dns: DnsObservation | undefined = observed ? JSON.parse(observed.value) : undefined;
+  if (freshDns(dns) && dns?.provider && dns.provider !== row.provider)
+    throw new HttpError(409, '此区域不是公共 NS 当前指向的平台，仅可查看配置，不能执行 DNS 写入');
+}
 async function log(
   env: Env,
   accountId: string | null,
@@ -143,6 +153,94 @@ export function createApp(fetcher: Fetch = fetch) {
     if (!['GET', 'HEAD'].includes(method)) sameOrigin(request);
     if (p === '/api/me')
       return json({ authenticated: true, features: { githubDeploy: !!env.GITHUB_TOKEN } });
+    if (p === '/api/dns-observations' && method === 'GET') {
+      const rows = await env.DB.prepare("SELECT value FROM settings WHERE key LIKE 'dns:%'").all<{
+        value: string;
+      }>();
+      return json({ items: rows.results.map((r) => JSON.parse(r.value)) });
+    }
+    if (p === '/api/dns-observations' && method === 'POST') {
+      const input = await body(request),
+        name = domainName(String(input.name ?? ''));
+      if (!/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/.test(name) || !name.includes('.'))
+        throw new HttpError(400, '域名格式无效');
+      let known = !!(await env.DB.prepare('SELECT id FROM zones WHERE LOWER(name)=?')
+        .bind(name)
+        .first());
+      if (!known) {
+        const rows = await env.DB.prepare(
+          "SELECT data FROM snapshots WHERE kind='registrations'",
+        ).all<{ data: string }>();
+        known = rows.results.some((r) =>
+          JSON.parse(r.data).some((d: any) => domainName(d.name) === name),
+        );
+      }
+      if (!known) throw new HttpError(404, '请先同步已连接账号中的域名');
+      const result = await observeDns(name, fetcher);
+      await env.DB.prepare(
+        'INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      )
+        .bind('dns:' + name, JSON.stringify(result))
+        .run();
+      return json(result);
+    }
+    const inventoryRoute = p.match(
+      /^\/api\/accounts\/([^/]+)\/inventory\/(registrations|services|certificates|email|records)$/,
+    );
+    if (inventoryRoute && method === 'POST') {
+      const row = await account(env, inventoryRoute[1]),
+        category = inventoryRoute[2],
+        input = await body(request);
+      let target: ZoneRow | undefined;
+      if (input.zoneId) {
+        target = await zone(env, String(input.zoneId));
+        if (target.account_id !== row.id) throw new HttpError(403, '域名不属于当前账号');
+      }
+      if (
+        (category === 'records' ||
+          category === 'email' ||
+          (category === 'certificates' && row.provider === 'cloudflare')) &&
+        !target
+      )
+        throw new HttpError(400, '此资源需要指定域名；全部刷新会逐个检查所有域名');
+      const kind = category + (target ? ':' + target.id : '');
+      try {
+        const client = await cloud(env, row, fetcher);
+        const result = await saveInventoryPage(env, row.id, kind, input, (page, providerCursor) =>
+          category === 'registrations'
+            ? client.registrations(page, providerCursor)
+            : category === 'services'
+              ? client.servicesPage(page)
+              : category === 'email'
+                ? client.emailPage(target!, page)
+                : category === 'records'
+                  ? client.records(target!, page)
+                  : client.certificatesPage(target, page),
+        );
+        if (result.complete) {
+          await env.DB.prepare('DELETE FROM snapshots WHERE account_id=? AND kind=?')
+            .bind(row.id, 'issue:' + kind)
+            .run();
+          await log(
+            env,
+            row.id,
+            'inventory',
+            '同步资源：' + row.name + ' / ' + category,
+            'success',
+            { count: result.count },
+          );
+        }
+        return json(result);
+      } catch (error) {
+        await snapshot(env, row.id, 'issue:' + kind, [
+          {
+            message:
+              error instanceof HttpError ? error.message : '资源同步失败，已保留上次完整快照',
+          },
+        ]);
+        throw error;
+      }
+    }
     if (p === '/api/logout' && method === 'POST') {
       const response = json({ ok: true });
       response.headers.set('Set-Cookie', cookie('', request, 0));
@@ -273,6 +371,7 @@ export function createApp(fetcher: Fetch = fetch) {
       const z = await zone(env, String(input.zoneId)),
         row = await account(env, z.account_id);
       if (row.readonly) throw new HttpError(403, '此账号为只读，不能生成 DNS 写入计划');
+      await assertDnsSource(env, row, z);
       if (!['create', 'update', 'delete'].includes(input.action))
         throw new HttpError(400, '操作类型无效');
       const client = await cloud(env, row, fetcher),
@@ -330,6 +429,7 @@ export function createApp(fetcher: Fetch = fetch) {
         row = await account(env, plan.accountId),
         z = await zone(env, plan.zoneId);
       if (row.readonly) throw new HttpError(403, '此账号已设为只读');
+      await assertDnsSource(env, row, z);
       if (row.updated_at + '|' + (await sha256(row.credentials)) !== plan.accountVersion)
         throw new HttpError(409, '云账号设置已变化，请重新预览');
       if (plan.protected && (input.acknowledgeProtected !== true || input.confirmDomain !== z.name))
@@ -377,7 +477,7 @@ export function createApp(fetcher: Fetch = fetch) {
       return json({
         items: (
           await env.DB.prepare(
-            'SELECT account_id,kind,data,updated_at FROM snapshots ORDER BY updated_at DESC',
+            "SELECT account_id,kind,data,updated_at FROM snapshots WHERE kind NOT LIKE 'pending:%' ORDER BY updated_at DESC",
           ).all()
         ).results.map((r: any) => ({ ...r, data: JSON.parse(r.data) })),
       });
@@ -491,8 +591,10 @@ export function createApp(fetcher: Fetch = fetch) {
           : undefined;
       if (row.provider === 'cloudflare' && !target) return;
       try {
-        const items = await (await cloud(env, row, fetcher)).certificates(target ?? undefined);
-        await snapshot(env, row.id, 'certificates' + (target ? ':' + target.id : ''), items);
+        const page = await (await cloud(env, row, fetcher)).certificatesPage(target ?? undefined);
+        // A sampled cron check must never overwrite the complete inventory with a first page.
+        if (!page.nextCursor)
+          await snapshot(env, row.id, 'certificates' + (target ? ':' + target.id : ''), page.items);
         await log(env, row.id, 'certificate', '定时检查：' + (target?.name ?? row.name));
       } catch (e) {
         await log(env, row.id, 'certificate', '定时检查未完成：' + row.name, 'failed', {

@@ -26,20 +26,13 @@ import {
   ExternalLink,
   LoaderCircle,
 } from 'lucide-react';
-import type {
-  Account,
-  Zone,
-  DnsRecord,
-  RecordInput,
-  Provider,
-  Operation,
-  Plan,
-  Service,
-  Certificate,
-  EmailRule,
-} from '../shared';
+import type { Account, Zone, DnsRecord, RecordInput, Provider, Operation, Plan } from '../shared';
 import './style.css';
+import './inventory.css';
 import { AppearancePicker } from './appearance';
+import { DomainExplorer, ResourceExplorer, syncResources, type Category } from './resources';
+import { domainInventory, dnsState, resourceRows } from '../inventory';
+import type { DnsObservation, ResourceSnapshot } from '../shared';
 
 const providers: Record<Provider, { name: string; short: string; color: string }> = {
   cloudflare: { name: 'Cloudflare', short: 'CF', color: 'orange' },
@@ -163,11 +156,12 @@ function Modal({
     </div>
   );
 }
-type Snapshot = { account_id: string; kind: string; data: any[]; updated_at: string };
+type Snapshot = ResourceSnapshot;
 type View =
   | 'overview'
   | 'accounts'
   | 'dns'
+  | 'records'
   | 'services'
   | 'email'
   | 'certificates'
@@ -178,6 +172,7 @@ const navigation: [View, string, typeof Cloud][] = [
   ['overview', '总览', LayoutDashboard],
   ['accounts', '云账号', Cloud],
   ['dns', '域名与 DNS', Globe2],
+  ['records', 'DNS 记录', Search],
   ['services', '托管服务', Server],
   ['email', '邮箱转发', Mail],
   ['certificates', 'HTTPS 证书', ShieldCheck],
@@ -197,12 +192,13 @@ function App() {
     [notice, setNotice] = useState(''),
     [busy, setBusy] = useState(false),
     [query, setQuery] = useState('');
-  const [accountId, setAccountId] = useState(''),
-    [zoneId, setZoneId] = useState(''),
+  const [observations, setObservations] = useState<DnsObservation[]>([]);
+  const [dnsDetail, setDnsDetail] = useState(false),
+    [resourceDomain, setResourceDomain] = useState('');
+  const [zoneId, setZoneId] = useState(''),
     [records, setRecords] = useState<DnsRecord[]>([]),
     [recordPage, setRecordPage] = useState(1),
-    [nextPage, setNextPage] = useState<number | null>(null),
-    [email, setEmail] = useState<EmailRule[]>([]);
+    [nextPage, setNextPage] = useState<number | null>(null);
   const [accountModal, setAccountModal] = useState<Account | null | undefined>(),
     [recordModal, setRecordModal] = useState<DnsRecord | null | undefined>(),
     [preview, setPreview] = useState<{ id: string; plan: Plan; expiresAt: string } | null>(null),
@@ -214,18 +210,20 @@ function App() {
     [workflow, setWorkflow] = useState('deploy.yml'),
     [branch, setBranch] = useState('main');
   const selectedZone = zones.find((z) => z.id === zoneId),
-    selectedAccount = accounts.find((a) => a.id === (selectedZone?.accountId ?? accountId));
+    selectedAccount = accounts.find((a) => a.id === selectedZone?.accountId);
   async function refresh() {
-    const [a, z, o, s] = await Promise.all([
+    const [a, z, o, s, dns] = await Promise.all([
       api('/accounts'),
       api('/zones'),
       api('/operations'),
       api('/snapshots'),
+      api('/dns-observations'),
     ]);
     setAccounts(a.items);
     setZones(z.items);
     setOperations(o.items);
     setSnapshots(s.items);
+    setObservations(dns.items);
   }
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -253,15 +251,6 @@ function App() {
       }
     })();
   }, []);
-  useEffect(() => {
-    if (accounts.length && !accountId) setAccountId(accounts[0].id);
-  }, [accounts, accountId]);
-  useEffect(() => {
-    if (view === 'certificates') {
-      if (zones.find((z) => z.id === zoneId)?.accountId !== accountId)
-        setZoneId(zones.find((z) => z.accountId === accountId)?.id ?? '');
-    } else if (zones.length && !zoneId) setZoneId(zones[0].id);
-  }, [zones, zoneId, view, accountId]);
   async function loadRecords() {
     if (!zoneId) return;
     const data = await api('/zones/' + encodeURIComponent(zoneId) + '/records?page=' + recordPage);
@@ -272,13 +261,8 @@ function App() {
     if (!auth || !zoneId) return;
     setError('');
     setRecords([]);
-    setEmail([]);
-    if (view === 'dns') void run(loadRecords);
-    if (view === 'email')
-      void run(async () =>
-        setEmail((await api('/zones/' + encodeURIComponent(zoneId) + '/email')).items),
-      );
-  }, [auth, view, zoneId, recordPage]);
+    if (view === 'dns' && dnsDetail) void run(loadRecords);
+  }, [auth, view, zoneId, recordPage, dnsDetail]);
   async function sync(id: string) {
     let cursor: number | null = 1,
       total = 0;
@@ -309,14 +293,67 @@ function App() {
   };
   const nav = (v: View) => {
     setView(v);
+    setDnsDetail(false);
+    setResourceDomain('');
     setQuery('');
     setError('');
     setNotice('');
   };
-  const certificateSnapshots = snapshots.filter((s) => s.kind.startsWith('certificates'));
-  const certificates = certificateSnapshots.flatMap((s) =>
-    s.data.map((c: Certificate) => ({ ...c, account_id: s.account_id, checked: s.updated_at })),
-  );
+  const certificates = resourceRows(snapshots, 'certificates');
+  const domains = domainInventory(zones, snapshots);
+  const selectedDnsState = selectedZone
+    ? dnsState(selectedZone, accounts, observations)
+    : 'unverified';
+  const dnsBlocked = selectedDnsState === 'other';
+  const openZone = (id: string) => {
+    chooseZone(id);
+    setView('dns');
+    setDnsDetail(true);
+    setError('');
+    setNotice('');
+  };
+  const openResources = (
+    category: 'services' | 'certificates' | 'email' | 'records',
+    name: string,
+  ) => {
+    nav(category);
+    setResourceDomain(name);
+  };
+  async function syncAllResources(category: Category) {
+    const result = await syncResources(accounts, zones, category, api, setNotice);
+    await refresh();
+    setNotice(
+      `已读取 ${result.count} 项资源${result.issues.length ? `；${result.issues.length} 个来源失败，详见来源提示` : '，所有来源已完成'}。`,
+    );
+  }
+  async function syncAllDomains() {
+    let failures = 0;
+    for (const a of accounts) {
+      try {
+        setNotice('同步 DNS 区域：' + a.name);
+        await sync(a.id);
+      } catch {
+        failures++;
+      }
+    }
+    const registrations = await syncResources(accounts, zones, 'registrations', api, setNotice);
+    failures += registrations.issues.length;
+    const [z, s] = await Promise.all([api('/zones'), api('/snapshots')]);
+    const all = domainInventory(z.items, s.items);
+    for (const d of all) {
+      setNotice('核实公共 NS：' + d.name);
+      try {
+        const result = await api('/dns-observations', 'POST', { name: d.name });
+        if (result.error) failures++;
+      } catch {
+        failures++;
+      }
+    }
+    await refresh();
+    setNotice(
+      `已归并 ${all.length} 个域名${failures ? `；${failures} 个来源或查询未完成，请查看提示` : '，注册与 DNS 来源已核实'}。`,
+    );
+  }
   const expiring = certificates.filter((c) => {
     const d = days(c.expiresAt);
     return d !== null && d <= 30;
@@ -485,7 +522,8 @@ function App() {
                   {
                     overview: '域名、解析和托管服务，在一个地方看清。',
                     accounts: '连接自己的云账号，按实际权限管理资源。',
-                    dns: '先预览差异，再确认修改。',
+                    dns: '按域名统一查看注册、DNS 和关联资源；同名域名自动归并。',
+                    records: '全部账号的 DNS 记录，保留每条记录的来源和生效情况。',
                     services: '查看各个平台上的站点与边缘托管服务。',
                     email: '查看 Cloudflare 的邮箱转发规则，现有配置保持不变。',
                     certificates: '记录平台证书状态，及时发现即将到期的证书。',
@@ -515,7 +553,7 @@ function App() {
               <section className="stats">
                 {[
                   [Cloud, '已连接账号', accounts.length, '三家云，各自独立'],
-                  [Globe2, '已同步域名', zones.length, 'DNS 托管区域'],
+                  [Globe2, '已同步域名', domains.length, `${zones.length} 份 DNS 配置，按域名去重`],
                   [ShieldCheck, '已检查证书', certificates.length, '来自平台查询结果'],
                   [
                     History,
@@ -568,7 +606,7 @@ function App() {
                             <strong>{a.name}</strong>
                             <small>
                               {providers[a.provider].name} ·{' '}
-                              {zones.filter((z) => z.accountId === a.id).length} 个域名
+                              {zones.filter((z) => z.accountId === a.id).length} 份 DNS 配置
                             </small>
                           </div>
                           <span className={'pill ' + (a.readonly ? '' : 'green')}>
@@ -641,7 +679,7 @@ function App() {
                     <span className="pill">{a.readonly ? '只读连接' : '允许确认后写入'}</span>
                   </div>
                   <h2>{a.name}</h2>
-                  <p>{zones.filter((z) => z.accountId === a.id).length} 个已同步域名</p>
+                  <p>{zones.filter((z) => z.accountId === a.id).length} 份已同步 DNS 配置</p>
                   <small>添加于 {time(a.createdAt)}</small>
                   <div className="card-actions">
                     <button
@@ -667,7 +705,6 @@ function App() {
                         if (confirm('仅移除本地账号连接和缓存，不会删除云平台资源。继续？'))
                           void run(async () => {
                             await api('/accounts/' + a.id, 'DELETE');
-                            setAccountId('');
                             setZoneId('');
                             await refresh();
                           });
@@ -685,11 +722,36 @@ function App() {
               </button>
             </div>
           )}
-          {['dns', 'email'].includes(view) && (
+          {view === 'dns' && !dnsDetail && (
+            <DomainExplorer
+              accounts={accounts}
+              zones={zones}
+              snapshots={snapshots}
+              observations={observations}
+              busy={busy}
+              onOpenZone={openZone}
+              onSync={() => void run(syncAllDomains)}
+              onResources={openResources}
+            />
+          )}
+          {view === 'dns' && dnsDetail && (
             <>
+              <div className="domain-detail-heading">
+                <button className="secondary" onClick={() => setDnsDetail(false)}>
+                  返回全部域名
+                </button>
+                <p>
+                  {selectedZone?.name} ·{' '}
+                  {selectedDnsState === 'current'
+                    ? '当前 NS 对应平台'
+                    : dnsBlocked
+                      ? '配置副本 · 非当前 DNS，仅供查看'
+                      : 'NS 尚未核实，请先在域名总览同步检查'}
+                </p>
+              </div>
               <div className="toolbar">
                 <label className="select-label">
-                  当前域名
+                  DNS 配置来源
                   <select value={zoneId} onChange={(e) => chooseZone(e.target.value)}>
                     <option value="">请选择已同步域名</option>
                     {zones.map((z) => (
@@ -720,7 +782,7 @@ function App() {
                     </div>
                     <button
                       className="primary"
-                      disabled={!selectedZone || selectedAccount?.readonly || busy}
+                      disabled={!selectedZone || selectedAccount?.readonly || dnsBlocked || busy}
                       onClick={() => setRecordModal(null)}
                     >
                       <Plus size={16} />
@@ -742,7 +804,7 @@ function App() {
                     }
                   />
                 </section>
-              ) : view === 'dns' ? (
+              ) : (
                 <section className="panel table-panel">
                   <div className="table-scroll">
                     <table>
@@ -795,6 +857,7 @@ function App() {
                                     aria-label={'编辑 ' + r.name}
                                     disabled={
                                       selectedAccount?.readonly ||
+                                      dnsBlocked ||
                                       !['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS'].includes(r.type) ||
                                       busy
                                     }
@@ -805,7 +868,7 @@ function App() {
                                   <button
                                     className="icon-button danger"
                                     aria-label={'删除 ' + r.name}
-                                    disabled={selectedAccount?.readonly || busy}
+                                    disabled={selectedAccount?.readonly || dnsBlocked || busy}
                                     onClick={() => void run(() => plan('delete', undefined, r.id))}
                                   >
                                     <Trash2 size={15} />
@@ -845,189 +908,23 @@ function App() {
                     </div>
                   </div>
                 </section>
-              ) : (
-                <section className="panel">
-                  {email.length ? (
-                    <div className="rule-list">
-                      {email.map((r) => (
-                        <div className="email-rule" key={r.id}>
-                          <Mail size={20} />
-                          <div>
-                            <strong>{r.name || '邮箱转发规则'}</strong>
-                            <pre>{JSON.stringify(r.matchers, null, 2)}</pre>
-                            <small>→ {JSON.stringify(r.actions)}</small>
-                          </div>
-                          <Status value={r.enabled ? 'active' : '已停用'} />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <Empty
-                      title={
-                        selectedAccount?.provider === 'cloudflare'
-                          ? '尚未读取到转发规则'
-                          : '此平台暂未接入邮箱转发'
-                      }
-                      description="MVP 只读展示 Cloudflare Email Routing 前 50 条规则，不会发送邮件或改变转发目标。"
-                    />
-                  )}
-                </section>
               )}
             </>
           )}
-          {['services', 'certificates'].includes(view) && (
-            <>
-              <div className="toolbar">
-                <label className="select-label">
-                  云账号
-                  <select
-                    value={accountId}
-                    onChange={(e) => {
-                      setAccountId(e.target.value);
-                      setZoneId('');
-                    }}
-                  >
-                    <option value="">选择云账号</option>
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {view === 'certificates' &&
-                  accounts.find((a) => a.id === accountId)?.provider === 'cloudflare' && (
-                    <label className="select-label">
-                      检查域名
-                      <select value={zoneId} onChange={(e) => setZoneId(e.target.value)}>
-                        <option value="">请选择</option>
-                        {zones
-                          .filter((z) => z.accountId === accountId)
-                          .map((z) => (
-                            <option key={z.id} value={z.id}>
-                              {z.name}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                  )}
-                <button
-                  className="primary"
-                  disabled={!accountId || busy}
-                  onClick={() =>
-                    void run(async () => {
-                      await api(
-                        '/accounts/' + accountId + '/' + view,
-                        'POST',
-                        view === 'certificates'
-                          ? {
-                              zoneId:
-                                accounts.find((a) => a.id === accountId)?.provider === 'cloudflare'
-                                  ? zoneId
-                                  : undefined,
-                            }
-                          : {},
-                      );
-                      await refresh();
-                      setNotice('已更新查询快照。');
-                    })
-                  }
-                >
-                  <RefreshCw size={16} />
-                  {view === 'certificates' ? '检查证书' : '读取服务'}
-                </button>
-                <span className="muted small">显示已保存的查询结果，不自动修改云资源</span>
-              </div>
-              <section className="panel">
-                {view === 'services' ? (
-                  <div className="service-grid">
-                    {snapshots
-                      .filter((s) => s.kind === 'services' && s.account_id === accountId)
-                      .flatMap((s) =>
-                        s.data.map((item: Service) => (
-                          <div className="service" key={item.id}>
-                            <span className="service-icon">
-                              <Server size={22} />
-                            </span>
-                            <div>
-                              <h3>{item.name}</h3>
-                              <small>
-                                {item.kind} · {item.detail ?? item.status}
-                              </small>
-                              <p>更新于 {time(s.updated_at)}</p>
-                            </div>
-                            {item.url && (
-                              <a
-                                className="icon-button"
-                                href={item.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                aria-label="打开站点"
-                              >
-                                <ExternalLink size={17} />
-                              </a>
-                            )}
-                          </div>
-                        )),
-                      )}
-                    {!snapshots.some(
-                      (s) => s.kind === 'services' && s.account_id === accountId,
-                    ) && (
-                      <Empty
-                        title="读取你的托管服务"
-                        description="支持 Cloudflare Pages / Workers、腾讯 EdgeOne Makers 与阿里云 ESA 站点列表。需要相应 API 的只读权限。"
-                      />
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <div className="table-scroll">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>域名</th>
-                            <th>平台状态</th>
-                            <th>到期时间</th>
-                            <th>续期方式</th>
-                            <th>检查时间</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {certificates
-                            .filter((c) => c.account_id === accountId)
-                            .map((c, i) => (
-                              <tr key={c.id + i}>
-                                <td className="record-name">{c.domain}</td>
-                                <td>
-                                  <Status value={c.status} />
-                                </td>
-                                <td
-                                  className={
-                                    days(c.expiresAt) !== null && days(c.expiresAt)! <= 30
-                                      ? 'danger-text'
-                                      : ''
-                                  }
-                                >
-                                  {time(c.expiresAt)}
-                                  {c.expiresAt && <small>剩余 {days(c.expiresAt)} 天</small>}
-                                </td>
-                                <td>{c.managed ? '由原平台托管' : '需在原平台核对'}</td>
-                                <td>{time(c.checked)}</td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {!certificates.some((c) => c.account_id === accountId) && (
-                      <Empty
-                        title="还没有证书查询快照"
-                        description="选择账号后检查。查询失败与缺少权限会明确提示，不会标记为正常。"
-                      />
-                    )}
-                  </>
-                )}
-              </section>
-            </>
+          {(['services', 'certificates', 'email', 'records'] as string[]).includes(view) && (
+            <ResourceExplorer
+              key={view}
+              accounts={accounts}
+              zones={zones}
+              snapshots={snapshots}
+              observations={observations}
+              busy={busy}
+              onOpenZone={openZone}
+              category={view as 'services' | 'certificates' | 'email' | 'records'}
+              onSync={() => void run(() => syncAllResources(view as Category))}
+              domainFilter={resourceDomain}
+              setDomainFilter={setResourceDomain}
+            />
           )}
           {view === 'deploy' && (
             <section className="panel deploy-panel">

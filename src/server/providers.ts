@@ -6,6 +6,7 @@ import type {
   Service,
   Certificate,
   EmailRule,
+  Registration,
 } from '../shared';
 import { base64, hmac, hex, sha256 } from './crypto';
 import { HttpError, type Fetch } from './types';
@@ -18,6 +19,7 @@ export interface RemoteZone {
 export interface Page<T> {
   items: T[];
   nextCursor: number | null;
+  providerCursor?: string;
 }
 export class Cloud {
   constructor(
@@ -72,9 +74,10 @@ export class Cloud {
       );
     return json;
   }
-  async tc(service: 'dnspod' | 'teo', action: string, params: Json): Promise<Json> {
+  async tc(service: 'dnspod' | 'teo' | 'domain', action: string, params: Json): Promise<Json> {
     const host = service + '.tencentcloudapi.com',
-      version = service === 'dnspod' ? '2021-03-23' : '2022-09-01';
+      version =
+        service === 'dnspod' ? '2021-03-23' : service === 'domain' ? '2018-08-08' : '2022-09-01';
     const timestamp = Math.floor(Date.now() / 1000),
       date = new Date(timestamp * 1000).toISOString().slice(0, 10),
       body = JSON.stringify(params);
@@ -361,33 +364,110 @@ export class Cloud {
     );
     return { id: String(j.RecordId ?? id) };
   }
+  async registrations(page = 1, providerCursor?: string): Promise<Page<Registration>> {
+    if (this.provider === 'aliyun') {
+      const j = await this.ali(
+        'QueryDomainList',
+        { PageNum: page, PageSize: 100 },
+        'domain',
+        '2018-01-29',
+      );
+      return {
+        items: (j.Data?.Domain ?? []).map((d: Json) => ({
+          id: String(d.InstanceId ?? d.DomainName),
+          name: d.DomainName,
+          registrar: d.Registrar || '阿里云注册服务',
+          expiresAt: d.ExpirationDateLong
+            ? new Date(Number(d.ExpirationDateLong)).toISOString()
+            : (d.ExpirationDate ?? null),
+          autoRenew: typeof d.AutoRenewEnabled === 'boolean' ? d.AutoRenewEnabled : null,
+          nameservers: d.DnsList?.DnsList ?? [],
+        })),
+        nextCursor: j.NextPage || Number(j.TotalPageNum) > page ? page + 1 : null,
+      };
+    }
+    if (this.provider === 'tencent') {
+      const j = await this.tc('domain', 'DescribeDomainNameList', {
+        Offset: (page - 1) * 100,
+        Limit: 100,
+      });
+      return {
+        items: (j.DomainSet ?? []).map((d: Json) => ({
+          id: d.DomainId,
+          name: d.DomainName,
+          registrar: '腾讯云注册服务',
+          expiresAt: d.ExpirationDate ?? null,
+          autoRenew: d.AutoRenew === undefined ? null : d.AutoRenew === 1,
+          nameservers: [],
+        })),
+        nextCursor: Number(j.TotalCount) > page * 100 ? page + 1 : null,
+      };
+    }
+    if (!this.credentials.accountId)
+      throw new HttpError(400, '查询注册域名需要 Cloudflare Account ID');
+    const j = await this.cf(
+      '/accounts/' +
+        encodeURIComponent(this.credentials.accountId) +
+        '/registrar/registrations?per_page=50' +
+        (providerCursor ? '&cursor=' + encodeURIComponent(providerCursor) : ''),
+    );
+    return {
+      items: (j.result ?? [])
+        .filter((d: Json) => d.status !== 'transfer_pending' && d.status !== 'registration_pending')
+        .map((d: Json) => ({
+          id: d.domain_name,
+          name: d.domain_name,
+          registrar: 'Cloudflare',
+          expiresAt: d.expires_at ?? null,
+          autoRenew: typeof d.auto_renew === 'boolean' ? d.auto_renew : null,
+          nameservers: [],
+        })),
+      nextCursor: j.result_info?.cursor ? page + 1 : null,
+      providerCursor: j.result_info?.cursor || undefined,
+    };
+  }
+
   async services(): Promise<Service[]> {
+    return (await this.servicesPage()).items;
+  }
+  async servicesPage(page = 1): Promise<Page<Service>> {
     if (this.provider === 'cloudflare') {
       if (!this.credentials.accountId)
         throw new HttpError(400, '查看托管服务需要在账号中填写 Cloudflare Account ID');
       const base = '/accounts/' + encodeURIComponent(this.credentials.accountId);
-      const [pages, workers] = await Promise.all([
-        this.cf(base + '/pages/projects?per_page=10'),
-        this.cf(base + '/workers/scripts'),
+      const [pages, workers, bindings] = await Promise.all([
+        this.cf(base + '/pages/projects?per_page=10&page=' + page),
+        page === 1 ? this.cf(base + '/workers/scripts') : Promise.resolve({ result: [] }),
+        page === 1 ? this.cf(base + '/workers/domains') : Promise.resolve({ result: [] }),
       ]);
-      return [
-        ...pages.result.map((p: Json) => ({
-          id: p.name,
-          name: p.name,
-          kind: 'Pages',
-          provider: this.provider,
-          status: p.canonical_deployment?.latest_stage?.status ?? 'unknown',
-          url: p.domains?.[0] ? 'https://' + p.domains[0] : undefined,
-          detail: '前 10 个 Pages 项目',
-        })),
-        ...workers.result.map((w: Json) => ({
-          id: w.id,
-          name: w.id,
-          kind: 'Worker',
-          provider: this.provider,
-          status: '已发布',
-        })),
-      ];
+      return {
+        items: [
+          ...pages.result.map((p: Json) => ({
+            id: p.name,
+            name: p.name,
+            kind: 'Pages',
+            provider: this.provider,
+            status: p.canonical_deployment?.latest_stage?.status ?? 'unknown',
+            url: p.domains?.[0] ? 'https://' + p.domains[0] : undefined,
+            domains: p.domains ?? [],
+          })),
+          ...workers.result.map((w: Json) => ({
+            id: w.id,
+            name: w.id,
+            kind: 'Worker',
+            provider: this.provider,
+            status: '已发布',
+            domains: bindings.result
+              .filter((d: Json) => d.service === w.id && d.enabled !== false)
+              .map((d: Json) => d.hostname),
+          })),
+        ],
+        nextCursor:
+          (pages.result_info?.total_pages ?? 0) > page ||
+          (!pages.result_info && pages.result.length === 10)
+            ? page + 1
+            : null,
+      };
     }
     if (this.provider === 'tencent') {
       if (!this.credentials.workspaceId)
@@ -395,7 +475,7 @@ export class Cloud {
       const body = {
         ZoneId: this.credentials.workspaceId,
         Interface: 'pages:DescribePagesProjects',
-        Payload: JSON.stringify({ Offset: 0, Limit: 100 }),
+        Payload: JSON.stringify({ Offset: (page - 1) * 100, Limit: 100 }),
       };
       const j = await this.tc('teo', 'DescribePagesResources', body);
       const result = typeof j.Result === 'string' ? JSON.parse(j.Result) : j.Result;
@@ -403,89 +483,134 @@ export class Cloud {
         this.error('Makers：' + (result.Message ?? result.Code));
       const data = result?.Data ?? result;
       if (!Array.isArray(data?.Projects)) this.error('Makers 项目列表响应格式无法识别');
-      return data.Projects.map((p: Json) => ({
-        id: p.ProjectId,
-        name: p.Name ?? p.ProjectName,
-        kind: 'EdgeOne Makers',
-        provider: this.provider,
-        status: p.Status ?? 'unknown',
-        detail: p.Area === 'global' ? '全球可用区（含中国大陆）' : p.Area,
-      }));
+      return {
+        items: data.Projects.map((p: Json) => ({
+          id: p.ProjectId,
+          name: p.Name ?? p.ProjectName,
+          kind: 'EdgeOne Makers',
+          provider: this.provider,
+          status: p.Status ?? 'unknown',
+          detail: p.Area === 'global' ? '全球可用区（含中国大陆）' : p.Area,
+          domains: (p.CustomDomains ?? p.Domains ?? [])
+            .map((d: any) => (typeof d === 'string' ? d : (d.DomainName ?? d.Domain)))
+            .filter(Boolean),
+        })),
+        nextCursor:
+          Number(data.TotalCount ?? data.Total ?? 0) > page * 100 || data.Projects.length === 100
+            ? page + 1
+            : null,
+      };
     }
-    const j = await this.ali('ListSites', { PageNumber: 1, PageSize: 100 }, 'esa', '2024-09-10');
-    return (j.Sites ?? j.SiteList ?? []).map((s: Json) => ({
-      id: String(s.SiteId),
-      name: s.SiteName,
-      kind: 'ESA',
-      provider: this.provider,
-      status: s.Status ?? s.SiteStatus ?? 'unknown',
-    }));
+    const j = await this.ali('ListSites', { PageNumber: page, PageSize: 100 }, 'esa', '2024-09-10');
+    const rows = j.Sites ?? j.SiteList ?? [];
+    return {
+      items: rows.map((s: Json) => ({
+        id: String(s.SiteId),
+        name: s.SiteName,
+        kind: 'ESA',
+        provider: this.provider,
+        status: s.Status ?? s.SiteStatus ?? 'unknown',
+        domains: s.SiteName ? [s.SiteName] : [],
+      })),
+      nextCursor: Number(j.TotalCount ?? 0) > page * 100 || rows.length === 100 ? page + 1 : null,
+    };
   }
   async certificates(zone?: { external_id: string; name: string }): Promise<Certificate[]> {
+    return (await this.certificatesPage(zone)).items;
+  }
+  async certificatesPage(
+    zone?: { external_id: string; name: string },
+    page = 1,
+  ): Promise<Page<Certificate>> {
     if (this.provider === 'cloudflare') {
       if (!zone) throw new HttpError(400, '请选择一个 Cloudflare 域名检查证书');
       const j = await this.cf(
         `/zones/${encodeURIComponent(zone.external_id)}/ssl/certificate_packs`,
       );
-      return (j.result ?? []).flatMap((p: Json) =>
-        (p.certificates ?? []).map((c: Json) => ({
-          id: c.id ?? p.id,
-          domain: (c.hosts ?? p.hosts ?? [zone.name]).join(', '),
-          status: p.status ?? c.status ?? 'unknown',
-          expiresAt: c.expires_on ?? null,
-          managed: true,
-          source: 'Cloudflare 边缘证书',
-        })),
-      );
+      return {
+        items: (j.result ?? []).flatMap((p: Json) =>
+          (p.certificates ?? []).map((c: Json) => ({
+            id: c.id ?? p.id,
+            domain: (c.hosts ?? p.hosts ?? [zone.name]).join(', '),
+            status: p.status ?? c.status ?? 'unknown',
+            expiresAt: c.expires_on ?? null,
+            managed: true,
+            source: 'Cloudflare 边缘证书',
+          })),
+        ),
+        nextCursor: null,
+      };
     }
     if (this.provider === 'tencent') {
       if (!this.credentials.workspaceId)
         throw new HttpError(400, '需要 Makers / EdgeOne 工作空间 Zone ID');
       const j = await this.tc('teo', 'DescribeHostCertificates', {
         ZoneId: this.credentials.workspaceId,
-        Offset: 0,
+        Offset: (page - 1) * 100,
         Limit: 100,
       });
       if (!Array.isArray(j.HostCertificates)) this.error('腾讯云证书响应格式无法识别');
-      return j.HostCertificates.flatMap((h: Json) =>
-        (h.HostCertInfo ?? []).map((c: Json) => ({
-          id: c.CertId,
-          domain: h.Host,
-          status: c.Status,
-          expiresAt: c.ExpireTime ?? null,
-          managed: h.Mode !== 'sslcert',
-          source: 'EdgeOne ' + h.Mode,
-        })),
-      );
+      return {
+        items: j.HostCertificates.flatMap((h: Json) =>
+          (h.HostCertInfo ?? []).map((c: Json) => ({
+            id: c.CertId,
+            domain: h.Host,
+            status: c.Status,
+            expiresAt: c.ExpireTime ?? null,
+            managed: h.Mode !== 'sslcert',
+            source: 'EdgeOne ' + h.Mode,
+          })),
+        ),
+        nextCursor:
+          Number(j.TotalCount ?? 0) > page * 100 || j.HostCertificates.length === 100
+            ? page + 1
+            : null,
+      };
     }
     const j = await this.ali(
       'ListUserCertificateOrder',
-      { CurrentPage: 1, ShowSize: 100 },
+      { CurrentPage: page, ShowSize: 100 },
       'cas',
       '2020-04-07',
     );
-    return (j.CertificateOrderList ?? []).map((c: Json) => ({
-      id: String(c.CertificateId ?? c.OrderId),
-      domain: c.Domain ?? c.CommonName ?? '未知域名',
-      status: c.Status ?? 'unknown',
-      expiresAt: c.EndDate ?? null,
-      managed: false,
-      source: '阿里云证书服务（不推断续期托管状态）',
-    }));
+    const rows = j.CertificateOrderList ?? [];
+    return {
+      items: rows.map((c: Json) => ({
+        id: String(c.CertificateId ?? c.OrderId),
+        domain: c.Domain ?? c.CommonName ?? '未知域名',
+        status: c.Status ?? 'unknown',
+        expiresAt: c.EndDate ?? null,
+        managed: false,
+        source: '阿里云证书服务（不推断续期托管状态）',
+      })),
+      nextCursor:
+        Number(j.TotalCount ?? j.Total ?? 0) > page * 100 || rows.length === 100 ? page + 1 : null,
+    };
   }
   async email(zone: { external_id: string; name: string }): Promise<EmailRule[]> {
+    return (await this.emailPage(zone)).items;
+  }
+  async emailPage(zone: { external_id: string; name: string }, page = 1): Promise<Page<EmailRule>> {
     if (this.provider !== 'cloudflare')
       throw new HttpError(400, 'MVP 的邮箱转发管理仅接入 Cloudflare Email Routing');
     const j = await this.cf(
-      `/zones/${encodeURIComponent(zone.external_id)}/email/routing/rules?per_page=50`,
+      `/zones/${encodeURIComponent(zone.external_id)}/email/routing/rules?per_page=50&page=${page}`,
     );
-    return (j.result ?? []).map((r: Json) => ({
-      id: r.id ?? r.tag,
-      name: r.name ?? '',
-      enabled: r.enabled,
-      matchers: r.matchers,
-      actions: r.actions,
-    }));
+    return {
+      items: (j.result ?? []).map((r: Json) => ({
+        id: r.id ?? r.tag,
+        name: r.name ?? '',
+        enabled: r.enabled,
+        matchers: r.matchers,
+        actions: r.actions,
+      })),
+      nextCursor:
+        (j.result_info?.total_pages ?? 0) > page ||
+        (j.result_info?.total_count ?? 0) > page * 50 ||
+        (!j.result_info && (j.result ?? []).length === 50)
+          ? page + 1
+          : null,
+    };
   }
 }
 export function validateCredentials(provider: Provider, input: unknown): Credentials {

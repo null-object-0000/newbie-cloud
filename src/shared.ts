@@ -43,6 +43,28 @@ export interface Service {
   status: string;
   url?: string;
   detail?: string;
+  domains?: string[];
+}
+export interface Registration {
+  id: string;
+  name: string;
+  registrar: string;
+  expiresAt: string | null;
+  autoRenew: boolean | null;
+  nameservers: string[];
+}
+export interface DnsObservation {
+  name: string;
+  nameservers: string[];
+  provider: Provider | null;
+  checkedAt: string;
+  error?: string;
+}
+export interface ResourceSnapshot {
+  account_id: string;
+  kind: string;
+  data: any[];
+  updated_at: string;
 }
 export interface Certificate {
   id: string;

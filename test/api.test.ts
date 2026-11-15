@@ -6,6 +6,7 @@ import { createApp } from '../src/server/index';
 import { decrypt, encrypt } from '../src/server/crypto';
 import { Cloud } from '../src/server/providers';
 import { recordInput } from '../src/server/validation';
+import { saveInventoryPage } from '../src/server/inventory';
 import type { Env, Fetch } from '../src/server/types';
 
 const token = 'example-admin-key-for-tests-only-32-characters';
@@ -469,4 +470,156 @@ test('GitHub dispatch stays disabled without a token and records dispatch separa
   const ops = await call('/api/operations');
   assert.ok(ops.body.items.some((o: any) => o.kind === 'deploy'));
   assert.ok(!JSON.stringify(ops.body).includes('example-github-token'));
+});
+
+test('inventory pages only publish a complete snapshot and a failed refresh retains the previous inventory', async () => {
+  const { id } = await add();
+  await env.DB.prepare('INSERT INTO snapshots VALUES(?,?,?,?)')
+    .bind(id, 'services', JSON.stringify([{ id: 'old' }]), new Date().toISOString())
+    .run();
+  const first = await saveInventoryPage(env, id, 'services', {}, async () => ({
+    items: [{ id: 'first' }],
+    nextCursor: 2,
+    providerCursor: 'next',
+  }));
+  let stored = await env.DB.prepare('SELECT data FROM snapshots WHERE account_id=? AND kind=?')
+    .bind(id, 'services')
+    .first<{ data: string }>();
+  assert.equal(JSON.parse(stored!.data)[0].id, 'old');
+  await assert.rejects(() =>
+    saveInventoryPage(env, id, 'services', { cursor: 2, syncId: first.syncId }, async () => {
+      throw Error('upstream down');
+    }),
+  );
+  stored = await env.DB.prepare('SELECT data FROM snapshots WHERE account_id=? AND kind=?')
+    .bind(id, 'services')
+    .first<{ data: string }>();
+  assert.equal(JSON.parse(stored!.data)[0].id, 'old');
+  const final = await saveInventoryPage(
+    env,
+    id,
+    'services',
+    { cursor: 2, syncId: first.syncId },
+    async (page, cursor) => {
+      assert.equal(page, 2);
+      assert.equal(cursor, 'next');
+      return { items: [{ id: 'second' }], nextCursor: null };
+    },
+  );
+  assert.equal(final.count, 2);
+  stored = await env.DB.prepare('SELECT data FROM snapshots WHERE account_id=? AND kind=?')
+    .bind(id, 'services')
+    .first<{ data: string }>();
+  assert.deepEqual(
+    JSON.parse(stored!.data).map((r: any) => r.id),
+    ['first', 'second'],
+  );
+  await assert.rejects(
+    () =>
+      saveInventoryPage(env, id, 'services', { cursor: 2, syncId: first.syncId }, async () => ({
+        items: [],
+        nextCursor: null,
+      })),
+    /失效/,
+  );
+});
+
+test('a newer inventory refresh prevents an older in-flight page from replacing its results', async () => {
+  const { id } = await add();
+  let unblock!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    unblock = resolve;
+  });
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const old = saveInventoryPage(env, id, 'services', {}, async () => {
+    entered();
+    await gate;
+    return { items: [{ id: 'outdated' }], nextCursor: null };
+  });
+  await started;
+  await saveInventoryPage(env, id, 'services', {}, async () => ({
+    items: [{ id: 'new' }],
+    nextCursor: null,
+  }));
+  const rejected = assert.rejects(old, /新的同步任务/);
+  unblock();
+  await rejected;
+  const stored = await env.DB.prepare('SELECT data FROM snapshots WHERE account_id=? AND kind=?')
+    .bind(id, 'services')
+    .first<{ data: string }>();
+  assert.equal(JSON.parse(stored!.data)[0].id, 'new');
+});
+
+test('inventory endpoints remain authenticated, restrict NS lookups to known domains and block writes to a non-current DNS platform', async () => {
+  const { id, zoneId } = await add(false);
+  const observer = createApp(async (input, init) => {
+    if (new URL(String(input)).hostname === 'cloudflare-dns.com')
+      return Response.json({
+        Status: 0,
+        Answer: [{ name: 'example.com.', type: 2, data: 'ns1.alidns.com.' }],
+      });
+    return upstream(input, init);
+  });
+  const send = async (path: string, data: unknown) =>
+    observer.fetch(
+      new Request('https://app.example' + path, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+      env,
+    );
+  assert.equal(
+    (await observer.fetch(new Request('https://app.example/api/dns-observations'), env)).status,
+    401,
+  );
+  assert.equal((await send('/api/dns-observations', { name: 'unknown.example' })).status, 404);
+  assert.equal((await send('/api/dns-observations', { name: 'example.com' })).status, 200);
+  assert.equal(
+    (
+      await send('/api/dns/plan', {
+        zoneId,
+        action: 'create',
+        record: { type: 'A', name: 'www.example.com', content: '192.0.2.1', ttl: 300 },
+      })
+    ).status,
+    409,
+  );
+  assert.equal(writes, 0);
+  assert.equal(
+    (await call('/api/accounts/' + id + '/inventory/certificates', 'POST', {})).response.status,
+    400,
+  );
+  const inventory = await call('/api/accounts/' + id + '/inventory/services', 'POST', {});
+  assert.equal(inventory.response.status, 200);
+  assert.equal(inventory.body.complete, true);
+  const snapshots = await call('/api/snapshots');
+  assert.ok(snapshots.body.items.every((s: any) => !s.kind.startsWith('pending:')));
+});
+
+test('DNS apply rechecks public NS evidence after the preview was approved', async () => {
+  const { zoneId } = await add(false);
+  const plan = await call('/api/dns/plan', 'POST', {
+    zoneId,
+    action: 'create',
+    record: { type: 'A', name: 'www.example.com', content: '192.0.2.1', ttl: 300 },
+  });
+  assert.equal(plan.response.status, 201);
+  await env.DB.prepare('INSERT INTO settings VALUES(?,?)')
+    .bind(
+      'dns:example.com',
+      JSON.stringify({
+        name: 'example.com',
+        nameservers: ['ns1.alidns.com'],
+        provider: 'aliyun',
+        checkedAt: new Date().toISOString(),
+      }),
+    )
+    .run();
+  const result = await call('/api/dns/apply/' + plan.body.id, 'POST', {});
+  assert.equal(result.response.status, 409);
+  assert.equal(writes, 0);
 });

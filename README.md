@@ -15,12 +15,16 @@ React 静态界面 + Cloudflare Workers API + D1。无需常驻服务器、Redis
 | DNS 变更预览                                           | 15 分钟有效；应用前重新核对远端旧值；同一计划仅执行一次   |
 | 邮箱 / 委派 / 证书验证记录保护                         | 额外确认用途并输入完整域名                                |
 | Cloudflare Pages / Workers、EdgeOne Makers、阿里云 ESA | 读取已有服务列表                                          |
-| Cloudflare Email Routing                               | 只读展示普通转发规则，前 50 条                            |
+| Cloudflare Email Routing                               | 只读汇总全部域名的普通转发规则，自动读取所有分页          |
 | 平台证书状态与到期时间                                 | 手动查询 + 每 15 分钟轮询一个账号                         |
 | GitHub Actions 部署入口                                | 配置可选 GITHUB_TOKEN 后派发已有 workflow_dispatch 工作流 |
 | 操作记录                                               | 保留 DNS 原值和计划，显示最近 100 条                      |
 
-服务与证书列表当前读取首批结果（Cloudflare Pages 10 个，腾讯 / 阿里相关接口最多 100 条），DNS 域名及记录支持分页。域名清单是 **DNS 托管区域**，不是域名注册商的完整资产；同步只合并缓存，不自动删除未返回的域名。
+服务、证书、邮箱和 DNS 记录默认展示全部账号，可按域名或账号筛选，不同平台的资源保留各自来源。刷新依次读取所有分页，完整成功后原子替换本地快照；失败保留上次完整结果，并显示来源错误及更新时间。每个资源集合的快照上限为 1.5 MB，超过时明确报错，不截断成“全部”。
+
+域名总览将同名注册域名和 DNS 区域归并，注册与续费信息来自各家注册接口（Cloudflare Registrar Registrations、腾讯域名注册、阿里云 QueryDomainList），不会从 DNS 区域倒推购买平台。通过固定的公共 DNS-over-HTTPS 端点查询 NS，显示 DNS 平台与观测时间；24 小时后或查询失败标记待核实，混合 / 自定义 NS 不猜测平台。比如“阿里云注册、Cloudflare DNS”会归成一个域名，阿里云的 DNS 区域显示为配置副本；已核实非当前 DNS 的区域禁止写入，计划与应用两个阶段均检查。NS 识别确认平台，不能单凭它证明同平台多个账号中哪份配置生效。
+
+托管服务的域名关联只使用平台返回的绑定信息（包括 EdgeOne Makers CustomDomains 和 Workers 自定义域名），未知绑定的项目仍可在全部资源中查看。域名同步只合并缓存，不自动删除云平台上已移除的区域；不会自动改动域名或远端 DNS。
 
 这是可运行的个人 MVP，不承诺代码跨云运行，也不执行自动迁移、购买产品、自动切换 DNS 或私钥签发。已托管证书由原云平台续期；这里观察平台返回的状态，不等同于独立探测所有源站 TLS。自管证书的 ACME 申请、部署和续期执行器属于后续工作。
 
@@ -76,6 +80,14 @@ npm run setup -- --publish-secrets
 
 配置后 main 的 push 或手动运行 CI 会在检查通过后部署。ADMIN_TOKEN / ENCRYPTION_KEY 仍保存在 Workers Secrets，CI 不生成或替换生产密钥。PR 工作流不会获得部署凭据。
 
+## 域名来源与分页接口
+
+- `POST /api/accounts/:id/inventory/{registrations|services|certificates|email|records}`：首次传 `{ "cursor": 1 }`，随后按返回的 `nextCursor` 和 `syncId` 继续，直到 `complete=true`。Cloudflare 证书、邮箱及 DNS 记录需附带 `zoneId`；界面会自动遍历全部域名。
+- `POST /api/dns-observations`：只允许查询已同步域名，传 `{ "name": "example.com" }`。该公共查询不携带任何云凭据。
+- 注册资产查询额外需要：阿里云 `domain:QueryCommonInfo`（QueryDomainList 的 RAM 授权项）、腾讯云 `domain:DescribeDomainNameList`、Cloudflare Registrar Read。缺少权限会显示来源错误，其他资源继续展示。
+
+参考：[阿里云注册域名列表](https://help.aliyun.com/en/dws/developer-reference/api-domain-2018-01-29-querydomainlist)、[腾讯云注册域名列表](https://cloud.tencent.com/document/product/242/48941)、[Cloudflare 注册域名列表](https://developers.cloudflare.com/api/resources/registrar/subresources/registrations/methods/list/)。
+
 ## 云 API 权限
 
 只读连接与供应商自身权限同时生效，前端关闭按钮不是唯一限制。服务能力独立：缺少 DNS 权限的腾讯云账号仍可单独查询已授权的 Makers 服务，账号保存时不强制要求所有产品权限。
@@ -96,7 +108,7 @@ npm run setup -- --publish-secrets
 - [静态资源计费](https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/)
 - [D1 计费](https://developers.cloudflare.com/d1/platform/pricing/)
 
-证书巡检默认每 15 分钟只处理一个账号（Cloudflare 每次一个域名），不会轮询忙等，不会触发自动续签或写 DNS。30 天前的非 DNS 操作记录定期清理；DNS 变更记录保留。外部写入发生超时或结果不明时，计划标记为待核对，不自动重放。
+证书巡检默认每 15 分钟只读取一个账号的首批结果（Cloudflare 每次一个域名），存在后续页时不覆盖完整资源快照，不会轮询忙等，不会触发自动续签或写 DNS。30 天前的非 DNS 操作记录定期清理；DNS 变更记录保留。外部写入发生超时或结果不明时，计划标记为待核对，不自动重放。
 
 ## 开源与后续方向
 
