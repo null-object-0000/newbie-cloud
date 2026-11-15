@@ -33,13 +33,17 @@ export class Cloud {
   private async request(url: string, init: RequestInit): Promise<Json> {
     let response: Response;
     try {
-      response = await this.fetcher(url, {
+      response = await this.fetcher.call(globalThis, url, {
         ...init,
-        redirect: 'error',
+        redirect: 'manual',
         signal: AbortSignal.timeout(15000),
       });
     } catch {
       this.error('云平台连接失败或超时，请稍后刷新；写入失败时请先核对远端记录，避免重复提交');
+    }
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel();
+      this.error('云平台返回了重定向，已停止请求以保护凭据');
     }
     let json: Json;
     try {

@@ -397,11 +397,12 @@ export function createApp(fetcher: Fetch = fetch) {
         !/^[-A-Za-z0-9_./]{1,128}$/.test(ref)
       )
         throw new HttpError(400, '仓库、工作流文件名或分支格式无效');
-      const response = await fetcher(
+      const response = await fetcher.call(
+        globalThis,
         `https://api.github.com/repos/${repository}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,
         {
           method: 'POST',
-          redirect: 'error',
+          redirect: 'manual',
           signal: AbortSignal.timeout(15000),
           headers: {
             Authorization: 'Bearer ' + env.GITHUB_TOKEN,
