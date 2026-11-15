@@ -7,6 +7,8 @@ import type {
   Certificate,
   EmailRule,
   Registration,
+  CloudRegion,
+  CloudServer,
 } from '../shared';
 import { base64, hmac, hex, sha256 } from './crypto';
 import { HttpError, type Fetch } from './types';
@@ -74,10 +76,21 @@ export class Cloud {
       );
     return json;
   }
-  async tc(service: 'dnspod' | 'teo' | 'domain', action: string, params: Json): Promise<Json> {
+  async tc(
+    service: 'dnspod' | 'teo' | 'domain' | 'cvm',
+    action: string,
+    params: Json,
+    region?: string,
+  ): Promise<Json> {
     const host = service + '.tencentcloudapi.com',
       version =
-        service === 'dnspod' ? '2021-03-23' : service === 'domain' ? '2018-08-08' : '2022-09-01';
+        service === 'dnspod'
+          ? '2021-03-23'
+          : service === 'domain'
+            ? '2018-08-08'
+            : service === 'cvm'
+              ? '2017-03-12'
+              : '2022-09-01';
     const timestamp = Math.floor(Date.now() / 1000),
       date = new Date(timestamp * 1000).toISOString().slice(0, 10),
       body = JSON.stringify(params);
@@ -107,7 +120,7 @@ export class Cloud {
         'X-TC-Action': action,
         'X-TC-Version': version,
         'X-TC-Timestamp': String(timestamp),
-        ...(gateway ? { 'X-TC-Region': 'ap-guangzhou' } : {}),
+        ...(gateway ? { 'X-TC-Region': 'ap-guangzhou' } : region ? { 'X-TC-Region': region } : {}),
         Authorization: `TC3-HMAC-SHA256 Credential=${this.credentials.secretId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
       },
       body,
@@ -363,6 +376,87 @@ export class Cloud {
       common,
     );
     return { id: String(j.RecordId ?? id) };
+  }
+  async regions(): Promise<CloudRegion[]> {
+    if (this.provider === 'cloudflare') throw new HttpError(400, 'Cloudflare 不提供此云服务器清单');
+    if (this.provider === 'tencent') {
+      const j = await this.tc('cvm', 'DescribeRegions', {});
+      return (j.RegionSet ?? [])
+        .filter((r: Json) => !r.RegionState || r.RegionState === 'AVAILABLE')
+        .map((r: Json) => ({ id: r.Region, name: r.RegionName ?? r.Region }));
+    }
+    const j = await this.ali('DescribeRegions', {}, 'ecs', '2014-05-26');
+    return (j.Regions?.Region ?? []).map((r: Json) => ({
+      id: r.RegionId,
+      name: r.LocalName ?? r.RegionId,
+    }));
+  }
+  async serversPage(region: string, page = 1, providerCursor?: string): Promise<Page<CloudServer>> {
+    if (!/^[a-z][a-z0-9-]{1,63}$/.test(region)) throw new HttpError(400, '地域参数无效');
+    if (this.provider === 'cloudflare') throw new HttpError(400, 'Cloudflare 不提供此云服务器清单');
+    if (this.provider === 'tencent') {
+      const j = await this.tc(
+        'cvm',
+        'DescribeInstances',
+        { Offset: (page - 1) * 100, Limit: 100 },
+        region,
+      );
+      return {
+        items: (j.InstanceSet ?? []).map((c: Json) => ({
+          id: c.InstanceId,
+          name: c.InstanceName ?? c.InstanceId,
+          provider: 'tencent',
+          region,
+          zone: c.Placement?.Zone ?? '',
+          state: c.InstanceState,
+          publicIps: c.PublicIpAddresses ?? [],
+          privateIps: c.PrivateIpAddresses ?? [],
+          cpu: c.CPU ?? 0,
+          memoryMiB: (c.Memory ?? 0) * 1024,
+          os: c.OsName ?? '',
+          createdAt: c.CreatedTime ?? null,
+          expiresAt: c.ExpiredTime ?? null,
+          billing: c.InstanceChargeType ?? '',
+        })),
+        nextCursor: Number(j.TotalCount) > page * 100 ? page + 1 : null,
+      };
+    }
+    const j = await this.ali(
+      'DescribeInstances',
+      {
+        RegionId: region,
+        MaxResults: 100,
+        ...(providerCursor ? { NextToken: providerCursor } : {}),
+      },
+      'ecs',
+      '2014-05-26',
+    );
+    return {
+      items: (j.Instances?.Instance ?? []).map((c: Json) => ({
+        id: c.InstanceId,
+        name: c.InstanceName ?? c.InstanceId,
+        provider: 'aliyun',
+        region,
+        zone: c.ZoneId ?? '',
+        state: c.Status,
+        publicIps: [
+          ...(c.PublicIpAddress?.IpAddress ?? []),
+          ...(c.EipAddress?.IpAddress ? [c.EipAddress.IpAddress] : []),
+        ],
+        privateIps: [
+          ...(c.InnerIpAddress?.IpAddress ?? []),
+          ...(c.VpcAttributes?.PrivateIpAddress?.IpAddress ?? []),
+        ],
+        cpu: c.Cpu ?? 0,
+        memoryMiB: c.Memory ?? 0,
+        os: c.OSName ?? c.OSType ?? '',
+        createdAt: c.CreationTime ?? null,
+        expiresAt: c.ExpiredTime ?? null,
+        billing: c.InstanceChargeType ?? '',
+      })),
+      nextCursor: j.NextToken ? page + 1 : null,
+      providerCursor: j.NextToken || undefined,
+    };
   }
   async registrations(page = 1, providerCursor?: string): Promise<Page<Registration>> {
     if (this.provider === 'aliyun') {

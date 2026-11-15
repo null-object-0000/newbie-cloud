@@ -1,0 +1,23 @@
+services:
+  newbie-cloud:
+    build: .
+    image: newbie-cloud:local
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${NEWBIE_PORT:-8080}:8080'
+    environment:
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    volumes:
+      - newbie-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      io.newbie-cloud.role: control-plane
+volumes:
+  newbie-data:

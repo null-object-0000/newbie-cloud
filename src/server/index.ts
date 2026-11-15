@@ -152,7 +152,67 @@ export function createApp(fetcher: Fetch = fetch) {
     if (!(await authenticated(request, env.ADMIN_TOKEN))) throw new HttpError(401, '请先登录');
     if (!['GET', 'HEAD'].includes(method)) sameOrigin(request);
     if (p === '/api/me')
-      return json({ authenticated: true, features: { githubDeploy: !!env.GITHUB_TOKEN } });
+      return json({
+        authenticated: true,
+        features: { githubDeploy: !!env.GITHUB_TOKEN, local: env.LOCAL?.capabilities ?? null },
+      });
+    if (p.startsWith('/api/local/')) {
+      if (!env.LOCAL) throw new HttpError(404, '本机管理仅在 Docker / Node 自托管版提供');
+      if (p === '/api/local/system' && method === 'GET') return json(await env.LOCAL.system());
+      if (p === '/api/local/containers' && method === 'GET')
+        return json({ items: await env.LOCAL.containers() });
+      const target = p.match(
+        /^\/api\/local\/containers\/([a-f0-9]{64})(?:\/(logs|stats|action))?$/,
+      );
+      if (target) {
+        const id = target[1],
+          resource = target[2];
+        if (!resource && method === 'GET') return json(await env.LOCAL.inspect(id));
+        if (resource === 'logs' && method === 'GET') {
+          const tail = Number(url.searchParams.get('tail') ?? 200);
+          if (!Number.isInteger(tail) || tail < 1 || tail > 1000)
+            throw new HttpError(400, '日志行数范围为 1–1000');
+          return json(await env.LOCAL.logs(id, tail));
+        }
+        if (resource === 'stats' && method === 'GET') return json(await env.LOCAL.stats(id));
+        if (resource === 'action' && method === 'POST') {
+          if (!env.LOCAL.capabilities.dockerWrite)
+            throw new HttpError(403, 'Docker 控制未开启，当前仅可读取');
+          const input = await body(request);
+          if (
+            !['start', 'stop', 'restart'].includes(input.action) ||
+            typeof input.confirmName !== 'string' ||
+            input.confirmName.length > 256 ||
+            typeof input.expectedState !== 'string'
+          )
+            throw new HttpError(400, '容器操作参数无效');
+          try {
+            await env.LOCAL.action(id, input.action, input.confirmName, input.expectedState);
+            await log(
+              env,
+              null,
+              'docker',
+              `容器 ${input.action}：${input.confirmName}`,
+              'success',
+              { id, action: input.action },
+            );
+            return json({ ok: true });
+          } catch (e) {
+            if (!(e instanceof HttpError) || e.status >= 500)
+              await log(
+                env,
+                null,
+                'docker',
+                `容器操作待核对：${input.confirmName}`,
+                'review_required',
+                { id, action: input.action },
+              );
+            throw e;
+          }
+        }
+      }
+      throw new HttpError(404, '本机管理接口不存在');
+    }
     if (p === '/api/dns-observations' && method === 'GET') {
       const rows = await env.DB.prepare("SELECT value FROM settings WHERE key LIKE 'dns:%'").all<{
         value: string;
@@ -185,7 +245,7 @@ export function createApp(fetcher: Fetch = fetch) {
       return json(result);
     }
     const inventoryRoute = p.match(
-      /^\/api\/accounts\/([^/]+)\/inventory\/(registrations|services|certificates|email|records)$/,
+      /^\/api\/accounts\/([^/]+)\/inventory\/(registrations|services|certificates|email|records|servers)$/,
     );
     if (inventoryRoute && method === 'POST') {
       const row = await account(env, inventoryRoute[1]),
@@ -203,19 +263,24 @@ export function createApp(fetcher: Fetch = fetch) {
         !target
       )
         throw new HttpError(400, '此资源需要指定域名；全部刷新会逐个检查所有域名');
-      const kind = category + (target ? ':' + target.id : '');
+      const region = category === 'servers' ? String(input.region ?? '') : '';
+      if (category === 'servers' && !/^[a-z][a-z0-9-]{1,63}$/.test(region))
+        throw new HttpError(400, '请选择云服务器地域');
+      const kind = category + (target ? ':' + target.id : region ? ':' + region : '');
       try {
         const client = await cloud(env, row, fetcher);
         const result = await saveInventoryPage(env, row.id, kind, input, (page, providerCursor) =>
-          category === 'registrations'
-            ? client.registrations(page, providerCursor)
-            : category === 'services'
-              ? client.servicesPage(page)
-              : category === 'email'
-                ? client.emailPage(target!, page)
-                : category === 'records'
-                  ? client.records(target!, page)
-                  : client.certificatesPage(target, page),
+          category === 'servers'
+            ? client.serversPage(region, page, providerCursor)
+            : category === 'registrations'
+              ? client.registrations(page, providerCursor)
+              : category === 'services'
+                ? client.servicesPage(page)
+                : category === 'email'
+                  ? client.emailPage(target!, page)
+                  : category === 'records'
+                    ? client.records(target!, page)
+                    : client.certificatesPage(target, page),
         );
         if (result.complete) {
           await env.DB.prepare('DELETE FROM snapshots WHERE account_id=? AND kind=?')
@@ -269,10 +334,27 @@ export function createApp(fetcher: Fetch = fetch) {
       await log(env, id, 'account', '添加云账号：' + name);
       return json({ account: publicAccount(await account(env, id)) }, 201);
     }
-    const accountRoute = p.match(/^\/api\/accounts\/([^/]+)(?:\/(sync|services|certificates))?$/);
+    const accountRoute = p.match(
+      /^\/api\/accounts\/([^/]+)(?:\/(sync|services|certificates|server-regions))?$/,
+    );
     if (accountRoute) {
       const row = await account(env, accountRoute[1]),
         action = accountRoute[2];
+      if (action === 'server-regions' && method === 'GET') {
+        try {
+          const items = await (await cloud(env, row, fetcher)).regions();
+          await snapshot(env, row.id, 'server-regions', items);
+          await env.DB.prepare('DELETE FROM snapshots WHERE account_id=? AND kind=?')
+            .bind(row.id, 'issue:server-regions')
+            .run();
+          return json({ items });
+        } catch (e) {
+          await snapshot(env, row.id, 'issue:server-regions', [
+            { message: e instanceof HttpError ? e.message : '地域列表读取失败' },
+          ]);
+          throw e;
+        }
+      }
       if (!action && method === 'PATCH') {
         const input = await body(request);
         let name = row.name,

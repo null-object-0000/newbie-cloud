@@ -7,6 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "dev:api": "wrangler dev --port 8787",
     "build": "tsc --noEmit && vite build",
+    "build:node": "esbuild src/node/start.ts --bundle --platform=node --target=node24 --format=esm --outfile=server/start.mjs",
+    "start": "node server/start.mjs",
     "test": "tsx --test test/*.test.ts",
     "check": "npm run build && npm test",
     "deploy": "npm run build && wrangler deploy --config wrangler.local.jsonc",

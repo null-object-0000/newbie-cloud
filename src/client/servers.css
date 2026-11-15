@@ -1,0 +1,94 @@
+.server-tabs {
+  display: flex;
+  gap: 5px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+.server-tabs button {
+  padding: 11px 20px;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  font-size: 15px;
+}
+.server-tabs button.selected {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.host-body {
+  padding: 25px;
+}
+.host-body h3 {
+  margin-bottom: 15px;
+}
+.host-facts {
+  margin: 0 0 25px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 23px;
+}
+.host-facts > div {
+  min-width: 0;
+}
+.host-facts dt {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-bottom: 7px;
+}
+.host-facts dd {
+  color: var(--text);
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+.host-facts small {
+  display: block;
+  font-size: 13px;
+  margin-top: 5px;
+  color: var(--text-muted);
+  line-height: 1.8;
+}
+.local-error {
+  color: var(--negative);
+  background: var(--negative-soft);
+  border: 1px solid var(--negative-border);
+  padding: 14px 18px;
+  border-radius: 9px;
+  margin: 15px 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.local-progress {
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 13px 17px;
+  border-radius: 8px;
+  margin: 14px 0;
+  font-size: 14px;
+}
+.container-logs {
+  max-height: 400px;
+  background: var(--canvas);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 18px;
+  font-size: 13px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sidebar nav {
+  overflow-y: auto;
+  min-height: 0;
+}
+.sidebar-bottom {
+  padding-top: 20px;
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .host-facts {
+    grid-template-columns: 1fr;
+  }
+  .host-body {
+    padding: 20px;
+  }
+}

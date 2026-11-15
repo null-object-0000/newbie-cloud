@@ -1,0 +1,11 @@
+# Explicitly opt into access to the local Docker daemon.
+# DOCKER_GID must match `stat -c %g /var/run/docker.sock` on Linux.
+services:
+  newbie-cloud:
+    environment:
+      DOCKER_SOCKET: /var/run/docker.sock
+      DOCKER_WRITE_ENABLED: ${DOCKER_WRITE_ENABLED:-false}
+    group_add:
+      - '${DOCKER_GID:-0}'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

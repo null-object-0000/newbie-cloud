@@ -1,4 +1,92 @@
 export type Provider = 'cloudflare' | 'tencent' | 'aliyun';
+export interface CloudRegion {
+  id: string;
+  name: string;
+}
+export interface CloudServer {
+  id: string;
+  name: string;
+  provider: 'tencent' | 'aliyun';
+  region: string;
+  zone: string;
+  state: string;
+  publicIps: string[];
+  privateIps: string[];
+  cpu: number;
+  memoryMiB: number;
+  os: string;
+  createdAt: string | null;
+  expiresAt: string | null;
+  billing: string;
+}
+export interface LocalCapabilities {
+  runtime: 'node' | 'docker';
+  docker: boolean;
+  dockerWrite: boolean;
+}
+export interface ContainerSummary {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  created: number;
+  ports: string[];
+  project: string | null;
+  service: string | null;
+  protected: boolean;
+}
+export interface ContainerDetail extends ContainerSummary {
+  hostname: string;
+  restartPolicy: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  exitCode: number;
+  health: string | null;
+  networks: { name: string; address: string }[];
+  mounts: { type: string; source: string; destination: string; readonly: boolean }[];
+}
+export interface ContainerStats {
+  cpuPercent: number | null;
+  memoryBytes: number;
+  memoryLimitBytes: number;
+  memoryPercent: number | null;
+  networkRxBytes: number;
+  networkTxBytes: number;
+  sampledAt: string;
+}
+export interface SystemOverview {
+  capabilities: LocalCapabilities;
+  runtime: {
+    hostname: string;
+    platform: string;
+    release: string;
+    arch: string;
+    cpus: number;
+    load: number[];
+    uptime: number;
+    memoryTotal: number;
+    memoryFree: number;
+    nodeVersion: string;
+    containerized: boolean;
+  };
+  dataDisk: { totalBytes: number; availableBytes: number; usedBytes: number } | null;
+  engine: {
+    name: string;
+    version: string;
+    os: string;
+    arch: string;
+    kernel: string;
+    cpus: number;
+    memoryTotal: number;
+    containers: number;
+    running: number;
+    stopped: number;
+    paused: number;
+    storageDriver: string;
+  } | null;
+  engineError: string | null;
+}
 export interface Account {
   id: string;
   name: string;

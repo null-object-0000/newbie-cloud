@@ -78,7 +78,7 @@ export function belongsToDomain(host: string, domain: string, knownDomains: stri
 }
 export function resourceRows(
   snapshots: ResourceSnapshot[],
-  category: 'services' | 'certificates' | 'email' | 'records',
+  category: 'services' | 'certificates' | 'email' | 'records' | 'servers',
 ) {
   const result = new Map<string, any>();
   // Keep copies on different accounts/platforms; only collapse duplicate observations of the same resource.
@@ -91,6 +91,7 @@ export function resourceRows(
         item.kind ?? '',
         item.id,
         item.domain ?? '',
+        category === 'servers' ? (item.region ?? '') : '',
         ['email', 'records'].includes(category) ? s.kind : '',
       ].join('|');
       result.set(key, {

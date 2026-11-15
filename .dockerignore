@@ -1,0 +1,15 @@
+node_modules
+dist
+server
+data
+.git
+.github
+.local
+.wrangler
+.dev.vars*
+.env*
+wrangler.local.jsonc
+*.log
+coverage
+playwright-report
+test-results

@@ -32,8 +32,9 @@ import './inventory.css';
 import { AppearancePicker } from './appearance';
 import { PwaInstall, PwaProvider } from './pwa';
 import { DomainExplorer, ResourceExplorer, syncResources, type Category } from './resources';
+import { CloudServers, Containers } from './servers';
 import { domainInventory, dnsState, resourceRows } from '../inventory';
-import type { DnsObservation, ResourceSnapshot } from '../shared';
+import type { DnsObservation, ResourceSnapshot, LocalCapabilities } from '../shared';
 
 const providers: Record<Provider, { name: string; short: string; color: string }> = {
   cloudflare: { name: 'Cloudflare', short: 'CF', color: 'orange' },
@@ -170,6 +171,8 @@ type View =
   | 'email'
   | 'certificates'
   | 'deploy'
+  | 'servers'
+  | 'containers'
   | 'history'
   | 'settings';
 const navigation: [View, string, typeof Cloud][] = [
@@ -181,9 +184,12 @@ const navigation: [View, string, typeof Cloud][] = [
   ['email', '邮箱转发', Mail],
   ['certificates', 'HTTPS 证书', ShieldCheck],
   ['deploy', '部署', CloudUpload],
+  ['servers', '服务器', Server],
+  ['containers', '本机容器', Server],
   ['history', '操作记录', History],
 ];
 function App() {
+  const [localCapabilities, setLocalCapabilities] = useState<LocalCapabilities | null>(null);
   const [auth, setAuth] = useState<boolean | null>(null),
     [configured, setConfigured] = useState(true),
     [token, setToken] = useState('');
@@ -248,6 +254,7 @@ function App() {
         setConfigured(health.configured);
         const me = await api('/me');
         setGithubEnabled(me.features.githubDeploy);
+        setLocalCapabilities(me.features.local ?? null);
         setAuth(true);
         await refresh();
       } catch {
@@ -399,6 +406,7 @@ function App() {
                   setToken('');
                   const me = await api('/me');
                   setGithubEnabled(me.features.githubDeploy);
+                  setLocalCapabilities(me.features.local ?? null);
                   setAuth(true);
                   await refresh();
                 });
@@ -449,15 +457,17 @@ function App() {
         <Brand />
         <span className="workspace-label">PERSONAL WORKSPACE</span>
         <nav>
-          {navigation.map(([id, label, Icon]) => (
-            <button key={id} className={view === id ? 'active' : ''} onClick={() => nav(id)}>
-              <Icon size={18} />
-              {label}
-              {id === 'accounts' && accounts.length > 0 && (
-                <span className="nav-count">{accounts.length}</span>
-              )}
-            </button>
-          ))}
+          {navigation
+            .filter(([id]) => id !== 'containers' || !!localCapabilities)
+            .map(([id, label, Icon]) => (
+              <button key={id} className={view === id ? 'active' : ''} onClick={() => nav(id)}>
+                <Icon size={18} />
+                {label}
+                {id === 'accounts' && accounts.length > 0 && (
+                  <span className="nav-count">{accounts.length}</span>
+                )}
+              </button>
+            ))}
         </nav>
         <div className="sidebar-bottom">
           <div className="free-note">
@@ -534,6 +544,8 @@ function App() {
                     email: '查看 Cloudflare 的邮箱转发规则，现有配置保持不变。',
                     certificates: '记录平台证书状态，及时发现即将到期的证书。',
                     deploy: '将构建和发布交给已有的 GitHub Actions 工作流。',
+                    servers: '汇总阿里云 ECS、腾讯云 CVM；自托管版还可查看部署主机。',
+                    containers: '查看本机 Docker 容器、日志和资源用量，按需确认启停操作。',
                     history: '每一次连接、检查和变更，都有迹可循。',
                     settings: '轻量、单用户、免费额度优先。',
                   }[view]
@@ -931,6 +943,18 @@ function App() {
               domainFilter={resourceDomain}
               setDomainFilter={setResourceDomain}
             />
+          )}
+          {view === 'servers' && (
+            <CloudServers
+              accounts={accounts}
+              snapshots={snapshots}
+              api={api}
+              onRefresh={refresh}
+              local={localCapabilities}
+            />
+          )}
+          {view === 'containers' && localCapabilities && (
+            <Containers api={api} capabilities={localCapabilities} onChanged={refresh} />
           )}
           {view === 'deploy' && (
             <section className="panel deploy-panel">
