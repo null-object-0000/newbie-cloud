@@ -59,6 +59,35 @@ const github =
     assert.ok(url.pathname.includes('/' + 'a'.repeat(40) + '/'));
     return url.pathname.endsWith('plugin.mjs') ? new Response(code) : Response.json(manifest);
   };
+test('GitHub fixed commits bypass REST quota; rate-limited branches validate Atom entry identities', async () => {
+  let apiCalls = 0;
+  let wrong = false;
+  const fake: Fetch = async (input) => {
+    const u = new URL(String(input));
+    if (u.hostname === 'api.github.com') {
+      apiCalls++;
+      return new Response('{}', { status: 403 });
+    }
+    if (u.hostname === 'github.com')
+      return new Response(
+        `<feed><entry><id>tag:github.com,2008:Grit::Commit/${'a'.repeat(40)}</id><link href="https://github.com/${wrong ? 'other/repo' : 'demo/plugin'}/commit/${'a'.repeat(40)}"/></entry></feed>`,
+      );
+    return Response.json(demoManifest);
+  };
+  assert.ok(
+    (await inspectSource('github:demo/plugin@' + 'a'.repeat(40), fake)).resolvedSource.endsWith(
+      'a'.repeat(40),
+    ),
+  );
+  assert.equal(apiCalls, 0);
+  assert.ok(
+    (await inspectSource('github:demo/plugin@main', fake)).resolvedSource.endsWith('a'.repeat(40)),
+  );
+  assert.equal(apiCalls, 1);
+  wrong = true;
+  await assert.rejects(() => inspectSource('github:demo/plugin@main', fake), /无法核实/);
+});
+
 test('GitHub installation pins a commit, requires confirmation, is replay-safe and starts disabled', async () =>
   environment(async (env) => {
     const app = createApp(github(demoManifest));

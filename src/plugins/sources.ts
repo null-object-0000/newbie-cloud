@@ -130,21 +130,44 @@ export async function inspectSource(source: string, fetcher: Fetch): Promise<Plu
     );
     if (!match) throw new HttpError(400, 'GitHub 来源格式为 github:owner/repo@版本');
     const [, owner, repo, ref = 'HEAD'] = match;
-    const commit = json(
-      await sourceFetch(
-        `https://api.github.com/repos/${owner}/${repo}/commits?sha=${encodeURIComponent(ref)}&per_page=1`,
-        fetcher,
-        64000,
-      ),
-    )?.[0];
-    if (typeof commit?.sha !== 'string' || !/^[a-f0-9]{40}$/.test(commit.sha))
+    let sha: string | undefined = /^[a-f0-9]{40}$/.test(ref) ? ref : undefined;
+    if (!sha) {
+      try {
+        sha = json(
+          await sourceFetch(
+            `https://api.github.com/repos/${owner}/${repo}/commits?sha=${encodeURIComponent(ref)}&per_page=1`,
+            fetcher,
+            64000,
+          ),
+        )?.[0]?.sha;
+      } catch (e) {
+        if (!(e instanceof HttpError) || !/HTTP (403|429)/.test(e.message)) throw e;
+        // Public Atom feeds are a best-effort fallback when shared egress has
+        // exhausted GitHub's anonymous REST quota. Never resolve from a title
+        // or commit-message body; cross-check the first entry's ID and URL.
+        const feed = decoder.decode(
+          await sourceFetch(
+            `https://github.com/${owner}/${repo}/commits/${encodeURIComponent(ref)}.atom`,
+            fetcher,
+            512000,
+          ),
+        );
+        const entry = feed.match(/<entry\b[^>]*>([\s\S]*?)<\/entry>/)?.[1];
+        sha = entry?.match(
+          /<id>\s*tag:github\.com,2008:Grit::Commit\/([a-f0-9]{40})\s*<\/id>/,
+        )?.[1];
+        if (!sha || !entry?.includes(`href="https://github.com/${owner}/${repo}/commit/${sha}"`))
+          throw new HttpError(502, 'GitHub 限流且无法核实订阅源，请改用完整提交 SHA 或稍后重试');
+      }
+    }
+    if (typeof sha !== 'string' || !/^[a-f0-9]{40}$/.test(sha))
       throw new HttpError(502, 'GitHub 未返回固定提交');
-    const base = `https://raw.githubusercontent.com/${owner}/${repo}/${commit.sha}/`;
+    const base = `https://raw.githubusercontent.com/${owner}/${repo}/${sha}/`;
     manifestBytes = await sourceFetch(base + 'newbie-plugin.json', fetcher, 32000);
     const manifest = validateManifest(json(manifestBytes));
     if (manifest.kind === 'node')
       codeBytes = await sourceFetch(base + 'plugin.mjs', fetcher, 256000);
-    resolvedSource = `github:${owner}/${repo}@${commit.sha}`;
+    resolvedSource = `github:${owner}/${repo}@${sha}`;
   } else if (source.startsWith('npm:')) {
     const raw = source.slice(4),
       at = raw.lastIndexOf('@'),
