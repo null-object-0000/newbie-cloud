@@ -150,12 +150,12 @@ export function Projects({
     if (activeId.current !== pid) return;
     setDetail(next);
     const r = next.releases.find((r) => r.id === rid);
-    if (r?.status === 'success' && r.verification === 'passed')
+    if (r?.status === 'success' && r.verification === 'production_passed')
       setNotice('部署已完成，访问验证通过。');
     if (
       !r ||
       ['failed', 'cancelled', 'review_required'].includes(r.status) ||
-      (r.status === 'success' && r.verification === 'passed')
+      (r.status === 'success' && ['passed', 'production_passed'].includes(r.verification ?? ''))
     )
       setPending(null);
   }
@@ -516,16 +516,20 @@ export function Projects({
                   {r.error && <p className="local-error">{r.error}</p>}
                   {r.status === 'success' && (
                     <p className="project-verified">
-                      {r.verification === 'passed' ? (
+                      {['passed', 'production_passed'].includes(r.verification ?? '') ? (
                         <>
                           <Check size={15} />
-                          访问验证通过，首页内容与上传版本一致
+                          {r.verification === 'production_passed'
+                            ? '访问验证通过，正式地址与上传版本一致'
+                            : '版本地址验证通过，首页内容与上传版本一致'}
                         </>
                       ) : (
                         '部署已完成；' +
-                        (r.verification === 'mismatch'
-                          ? '首页内容校验不一致，请核实平台设置'
-                          : '访问尚未验证通过，可稍后重新检查')
+                        (r.verification === 'pending_production'
+                          ? '版本地址验证通过，正式地址传播中，可稍后重新检查'
+                          : r.verification === 'mismatch'
+                            ? '首页内容校验不一致，请核实平台设置'
+                            : '访问尚未验证通过，可稍后重新检查')
                       )}
                       {r.verified_at && <small>{date(r.verified_at)}</small>}
                     </p>

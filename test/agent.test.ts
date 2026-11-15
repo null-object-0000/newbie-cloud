@@ -94,7 +94,7 @@ test('real stdio MCP publishes a bounded local folder through scoped tokens and 
     assert.equal(first.release.status, 'deploying');
     let checked = await tool('project_status', { projectId: pid, releaseId: first.release.id });
     assert.equal(checked.project.current_release, first.release.id);
-    assert.equal(checked.releases[0].verification, 'passed');
+    assert.equal(checked.releases[0].verification, 'production_passed');
     const replay = await tool('publish_static_folder', {
       projectId: pid,
       directory: output,

@@ -106,7 +106,7 @@ test('one account completes project creation, publish, verified update and rollb
     assert.equal(pub.body.release.status, 'deploying');
     let result = await call(`/projects/${pid}/releases/${rid}/check`, 'POST', {});
     assert.equal(result.body.project.current_release, rid);
-    assert.equal(result.body.releases[0].verification, 'passed');
+    assert.equal(result.body.releases[0].verification, 'production_passed');
     const second = await upload(pid, '<h1>version two</h1>');
     await call(`/projects/${pid}/releases/${second}/publish`, 'POST', {});
     await call(`/projects/${pid}/releases/${second}/check`, 'POST', {});
@@ -138,7 +138,7 @@ test('lost responses and concurrent publish submissions never automatically repe
     assert.equal(cf.posts, 1);
     const checked = await call(`/projects/${pid}/releases/${rid}/check`, 'POST', {});
     assert.equal(checked.body.project.current_release, rid);
-    assert.equal(checked.body.releases[0].verification, 'passed');
+    assert.equal(checked.body.releases[0].verification, 'production_passed');
     assert.equal(cf.posts, 1);
     const next = await upload(pid, 'rejected');
     cf.rejectNext();
@@ -248,4 +248,19 @@ test('unknown tasks require owner confirmation and remote absence before manual 
     assert.equal(done.status, 200);
     assert.equal(done.body.project.active_task, null);
     assert.equal(done.body.releases[0].status, 'failed');
+  }));
+
+test('successful deployments keep production verification pending until the stable URL serves the expected bytes', async () =>
+  environment(async ({ call, create, upload, cf }: any) => {
+    const pid = await create(),
+      rid = await upload(pid, '<h1>expected version</h1>');
+    await call(`/projects/${pid}/releases/${rid}/publish`, 'POST', {});
+    cf.holdProduction('<h1>stale cache</h1>');
+    const pending = await call(`/projects/${pid}/releases/${rid}/check`, 'POST', {});
+    assert.equal(pending.body.releases[0].status, 'success');
+    assert.equal(pending.body.releases[0].verification, 'pending_production');
+    cf.holdProduction(null);
+    const ready = await call(`/projects/${pid}/releases/${rid}/check`, 'POST', {});
+    assert.equal(ready.body.releases[0].verification, 'production_passed');
+    assert.equal(cf.posts, 1);
   }));

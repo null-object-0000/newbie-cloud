@@ -97,7 +97,7 @@ test('native Worker creates a static project, uploads assets, verifies productio
     await api(`/projects/${pid}/releases/${r.release.id}/publish`, 'POST', {});
     const checked = await api(`/projects/${pid}/releases/${r.release.id}/check`, 'POST', {});
     assert.equal(checked.project.current_release, r.release.id);
-    assert.equal(checked.releases[0].verification, 'passed');
+    assert.equal(checked.releases[0].verification, 'production_passed');
     const issued = await api('/projects/' + pid + '/tokens', 'POST', { name: 'Worker Agent' });
     assert.equal((await api('/projects', 'GET', undefined, issued.token)).items.length, 1);
     const denied = await mf.dispatchFetch('https://app.example/api/accounts', {

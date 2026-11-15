@@ -5,6 +5,7 @@ export function pagesFixture() {
     deployments = new Map<string, any>(),
     assets = new Map<string, string>();
   let posts = 0,
+    productionBody: string | null = null,
     rollbacks = 0,
     lost = false,
     fail = false;
@@ -14,7 +15,11 @@ export function pagesFixture() {
       method = init?.method ?? 'GET';
     if (u.hostname.endsWith('.pages.dev')) {
       assert.equal(new Headers(init?.headers).has('Authorization'), false);
-      const d = [...deployments.values()].find((d) => d.url === u.origin);
+      if (projects.has(u.hostname.slice(0, -'.pages.dev'.length)) && productionBody !== null)
+        return new Response(productionBody);
+      const d =
+        [...deployments.values()].find((d) => d.url === u.origin) ??
+        projects.get(u.hostname.slice(0, -'.pages.dev'.length))?.canonical_deployment;
       assert.ok(d);
       return new Response(Buffer.from(assets.get(d.manifest['/index.html'])!, 'base64'), {
         headers: { 'Content-Type': 'text/html' },
@@ -81,6 +86,9 @@ export function pagesFixture() {
     return ok(project);
   };
   return {
+    holdProduction(body: string | null) {
+      productionBody = body;
+    },
     fetcher,
     projects,
     deployments,

@@ -167,7 +167,7 @@ async function finish(
     status === 'success' ? 'success' : status === 'failed' ? 'failed' : 'review_required',
   );
 }
-async function verify(env: Env, p: Project, r: Release, fetcher: Fetch) {
+async function verify(env: Env, p: Project, r: Release, fetcher: Fetch, production = false) {
   if (!r.url) return;
   let status = 'pending';
   try {
@@ -187,6 +187,20 @@ async function verify(env: Env, p: Project, r: Release, fetcher: Fetch) {
       await response.body?.cancel();
       status = 'http_' + response.status;
     }
+    if (status === 'passed' && production) {
+      status = 'pending_production';
+      try {
+        const live = await fetcher.call(globalThis, 'https://' + p.remote_name + '.pages.dev/', {
+          redirect: 'manual',
+          signal: AbortSignal.timeout(10000),
+          headers: { 'Cache-Control': 'no-cache' },
+        });
+        if (live.status === 200) {
+          if ((await sha(await bytesLimited(live.body, MAX_FILE))) === index.sha256)
+            status = 'production_passed';
+        } else await live.body?.cancel();
+      } catch {}
+    }
   } catch {
     status = 'pending';
   }
@@ -198,7 +212,7 @@ async function check(env: Env, p: Project, r: Release, fetcher: Fetch) {
   const cf = await cloud(env, p, fetcher);
   if (r.kind === 'rollback') {
     if (r.status === 'success') {
-      await verify(env, p, r, fetcher);
+      await verify(env, p, r, fetcher, p.current_release === r.target_release);
       return;
     }
     const remote = await cf.project(p.remote_name),
@@ -209,7 +223,7 @@ async function check(env: Env, p: Project, r: Release, fetcher: Fetch) {
         .bind(target.external_id, target.url, r.id)
         .run();
       await finish(env, p, r, 'success', null, target.id);
-      await verify(env, p, r, fetcher);
+      await verify(env, p, r, fetcher, true);
     }
     return;
   }
@@ -232,7 +246,7 @@ async function check(env: Env, p: Project, r: Release, fetcher: Fetch) {
     const isCurrent = current.canonical_deployment?.id === remote.id;
     if (r.status !== 'success')
       await finish(env, p, r, 'success', null, isCurrent ? r.id : undefined);
-    await verify(env, p, r, fetcher);
+    await verify(env, p, r, fetcher, isCurrent);
   } else if (['failure', 'canceled', 'cancelled'].includes(stage)) {
     if (r.status !== 'failed')
       await finish(env, p, r, 'failed', '云平台部署失败，请检查静态文件或平台限制');
