@@ -1,0 +1,75 @@
+.pwa-install {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.pwa-install:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+.login-appearance {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pwa-notice {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 16px 19px;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  z-index: 90;
+}
+.pwa-notice strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pwa-notice p {
+  font-size: 13px;
+  margin-top: 4px;
+  max-width: 420px;
+  line-height: 1.8;
+}
+.pwa-help p {
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.9;
+}
+.pwa-help small {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+@media (max-width: 500px) {
+  .pwa-notice {
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 15px;
+  }
+  .pwa-notice > div {
+    flex: 1;
+    min-width: 170px;
+  }
+  .topbar .owner {
+    display: none;
+  }
+}

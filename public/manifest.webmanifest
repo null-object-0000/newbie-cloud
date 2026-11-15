@@ -1,0 +1,22 @@
+{
+  "id": "/",
+  "name": "Newbie Cloud · 个人云管家",
+  "short_name": "Newbie Cloud",
+  "description": "个人使用、免费优先的多云管理台，统一管理域名、DNS 与托管资源。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#1b57df",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

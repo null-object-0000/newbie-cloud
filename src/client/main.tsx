@@ -30,6 +30,7 @@ import type { Account, Zone, DnsRecord, RecordInput, Provider, Operation, Plan }
 import './style.css';
 import './inventory.css';
 import { AppearancePicker } from './appearance';
+import { PwaInstall, PwaProvider } from './pwa';
 import { DomainExplorer, ResourceExplorer, syncResources, type Category } from './resources';
 import { domainInventory, dnsState, resourceRows } from '../inventory';
 import type { DnsObservation, ResourceSnapshot } from '../shared';
@@ -60,6 +61,9 @@ async function api<T = any>(url: string, method = 'GET', data?: unknown): Promis
       : {}),
   });
   const result: any = await response.json();
+  window.dispatchEvent(
+    new CustomEvent('newbie-cloud-network', { detail: { offline: result.offline === true } }),
+  );
   if (!response.ok) throw new Error(result.error ?? '请求未完成');
   return result as T;
 }
@@ -371,6 +375,7 @@ function App() {
       <main className="login-page">
         <div className="login-card">
           <div className="login-appearance">
+            <PwaInstall />
             <AppearancePicker />
           </div>
           <Brand />
@@ -487,6 +492,7 @@ function App() {
             <strong>{navigation.find((n) => n[0] === view)?.[1] ?? '使用说明'}</strong>
           </div>
           <div className="topbar-actions">
+            <PwaInstall />
             <AppearancePicker />
             <span className="owner">
               <span>N</span>个人空间
@@ -1421,4 +1427,8 @@ function RecordEditor({
     </Modal>
   );
 }
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(
+  <PwaProvider>
+    <App />
+  </PwaProvider>,
+);
