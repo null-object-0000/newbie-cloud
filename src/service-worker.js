@@ -65,7 +65,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       caches
         .open(CACHE)
-        .then(async (cache) => (await cache.match('/index.html')) ?? fetch(request)),
+        .then(async (cache) => (await cache.match('/')) ?? fetch(request)),
     );
   } else if (STATIC_PATHS.has(url.pathname)) {
     event.respondWith(

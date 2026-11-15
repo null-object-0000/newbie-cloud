@@ -15,7 +15,7 @@ test('PWA builds versioned static-only precaches and changes version when the sh
     await fs.writeFile(path.join(dir, 'assets/app-123.js'), 'console.log("app")');
     await fs.writeFile(path.join(dir, 'private.json'), '{"secret":"never cache"}');
     const first = await generatePwa(dir);
-    assert.deepEqual(first.urls, ['/assets/app-123.js', '/index.html', '/manifest.webmanifest']);
+    assert.deepEqual(first.urls, ['/assets/app-123.js', '/', '/manifest.webmanifest']);
     assert.equal((await generatePwa(dir)).version, first.version);
     await fs.writeFile(path.join(dir, 'index.html'), '<html>updated shell</html>');
     assert.notEqual((await generatePwa(dir)).version, first.version);
@@ -38,7 +38,7 @@ test('PWA builds versioned static-only precaches and changes version when the sh
 test('service worker never caches API reads/writes or queues failures, and only deletes its own old shell caches', async () => {
   const source = (await fs.readFile('src/service-worker.js', 'utf8'))
     .replace('__BUILD_VERSION__', '"test"')
-    .replace('__PRECACHE_URLS__', '["/index.html","/assets/app.js"]');
+    .replace('__PRECACHE_URLS__', '["/","/assets/app.js"]');
   const handlers: Record<string, (event: any) => void> = {};
   let network = 0,
     cacheReads = 0,

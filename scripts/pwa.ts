@@ -23,7 +23,9 @@ export async function generatePwa(directory: string, templatePath = 'src/service
     hash.update(await readFile(path.join(directory, name)));
   }
   const version = hash.digest('hex').slice(0, 20);
-  const urls = files.map((name) => '/' + name);
+  // Workers Static Assets redirects /index.html to /. Cache the canonical URL
+  // so offline navigations never receive a cached redirected Response.
+  const urls = files.map((name) => (name === 'index.html' ? '/' : '/' + name));
   await writeFile(
     path.join(directory, 'sw.js'),
     template
