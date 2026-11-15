@@ -162,7 +162,11 @@ export class Cloud {
     const host =
       service === 'esa'
         ? 'esa.' + (this.credentials.esaRegion ?? 'cn-hangzhou') + '.aliyuncs.com'
-        : service + '.aliyuncs.com';
+        : service === 'ecs' &&
+            typeof params.RegionId === 'string' &&
+            /^[a-z][a-z0-9-]{1,63}$/.test(params.RegionId)
+          ? 'ecs.' + params.RegionId + '.aliyuncs.com'
+          : service + '.aliyuncs.com';
     const json = await this.request(
       'https://' + host + '/?' + canonical + '&Signature=' + encode(signature),
       { method: 'GET' },

@@ -57,7 +57,12 @@ test('ECS uses read-only regional queries, opaque page tokens and reports regist
     { accessKeyId: 'fixture-id', accessKeySecret: 'fixture-secret' },
     async (input) => {
       const url = new URL(String(input));
-      assert.equal(url.hostname, 'ecs.aliyuncs.com');
+      assert.equal(
+        url.hostname,
+        url.searchParams.get('Action') === 'DescribeRegions'
+          ? 'ecs.aliyuncs.com'
+          : 'ecs.cn-hangzhou.aliyuncs.com',
+      );
       assert.equal(url.searchParams.get('Version'), '2014-05-26');
       if (url.searchParams.get('Action') === 'DescribeRegions')
         return Response.json({
