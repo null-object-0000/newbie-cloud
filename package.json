@@ -1,0 +1,38 @@
+{
+  "name": "newbie-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "dev:api": "wrangler dev --port 8787",
+    "build": "tsc --noEmit && vite build",
+    "test": "tsx --test test/*.test.ts",
+    "check": "npm run build && npm test",
+    "deploy": "npm run build && wrangler deploy --config wrangler.local.jsonc",
+    "db:local": "wrangler d1 migrations apply DB --local",
+    "db:remote": "wrangler d1 migrations apply DB --remote --config wrangler.local.jsonc",
+    "setup": "node scripts/setup.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "lucide-react": "0.468.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261115.1",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "miniflare": "5.20261113.0-beta",
+    "playwright": "1.65.1",
+    "prettier": "3.10.1",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.8",
+    "wrangler": "4.162.0"
+  }
+}
